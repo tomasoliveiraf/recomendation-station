@@ -13,63 +13,116 @@
   <header class="site-header">
     <div class="brand">
       <span class="accent-dot" aria-hidden="true"></span>
-      <span class="brand-name">RECOMMENTATION STATION</span>
+      <button id="brand-home-btn" class="brand-name-btn" type="button">RECOMMENTATION STATION</button>
     </div>
+
+    <nav id="main-nav" class="main-nav hidden" aria-label="Primary navigation">
+      <button id="nav-station" class="nav-link active" type="button">Station</button>
+      <button id="nav-shelf" class="nav-link" type="button">Shelf</button>
+      <button id="nav-search" class="nav-link" type="button">Search</button>
+      <button id="nav-listeners" class="nav-link" type="button">Listeners</button>
+      <button id="nav-profile" class="nav-link" type="button">Profile</button>
+    </nav>
 
     <div class="header-controls">
       <span id="current-date-label" class="meta-label"></span>
-      <button id="edit-profile-btn" class="text-btn hidden" type="button">Profile &amp; tastes</button>
+      <button id="theme-toggle-btn" class="text-btn" type="button" aria-label="Toggle color theme">Light</button>
       <button id="sign-out-btn" class="text-btn hidden" type="button">Sign out</button>
     </div>
   </header>
 
-  <!-- AUTH / PROFILE VIEW -->
-  <section id="auth-view" class="auth-panel hidden" aria-label="Account and musical taste">
+  <!-- AUTH / PROFILE EDIT VIEW -->
+  <section id="auth-view" class="auth-panel" aria-label="Account and musical profile">
     <div class="auth-inner">
-      <p class="eyebrow">Station Access</p>
-      <h1 class="auth-title">Tune your daily <span class="editorial-accent">selection</span>.</h1>
-      <p class="auth-copy">
+      <p id="auth-eyebrow" class="eyebrow">Station Access</p>
+      <h1 id="auth-heading" class="auth-title">Tune your daily <span class="editorial-accent">selection</span>.</h1>
+      <p id="auth-copy" class="auth-copy">
         One album a day, matched to what you gravitate toward. No scores, no star ratings—just music and notes from listeners who loved it.
       </p>
 
-      <div class="auth-mode-switch" role="tablist">
+      <div id="auth-mode-switch" class="auth-mode-switch" role="tablist">
         <button id="mode-signin" class="mode-tab active" type="button">Sign in</button>
         <button id="mode-signup" class="mode-tab" type="button">Create account</button>
       </div>
 
       <form id="auth-form" class="login-form">
-        <label id="name-field" class="field-group hidden">
+        <div id="avatar-field" class="avatar-editor hidden">
+          <div id="avatar-preview" class="avatar-circle avatar-lg"></div>
+          <div class="avatar-controls">
+            <label class="text-btn file-label">
+              Upload photo
+              <input id="avatar-file-input" type="file" accept="image/*" class="sr-only" />
+            </label>
+            <button id="remove-avatar-btn" type="button" class="text-btn hidden">Remove</button>
+            <span class="meta-label">Square crop, saved automatically.</span>
+          </div>
+        </div>
+
+        <label id="name-field" class="field-group">
           <span class="field-label">Listener Name</span>
           <input id="name-input" type="text" placeholder="e.g. Tomás" autocomplete="name" />
         </label>
 
-        <label class="field-group">
+        <label id="bio-field" class="field-group hidden">
+          <span class="field-label">Short Bio (optional)</span>
+          <textarea id="bio-input" rows="2" placeholder="What kind of music do you usually gravitate toward?"></textarea>
+        </label>
+
+        <label id="email-field" class="field-group hidden">
           <span class="field-label">Email</span>
-          <input id="email-input" type="email" placeholder="you@example.com" required autocomplete="email" />
+          <input id="email-input" type="email" placeholder="you@example.com" autocomplete="email" />
         </label>
 
-        <label class="field-group">
+        <label id="password-field" class="field-group hidden">
           <span class="field-label">Password</span>
-          <input id="password-input" type="password" placeholder="At least 6 characters" required autocomplete="current-password" />
+          <input id="password-input" type="password" placeholder="At least 6 characters" autocomplete="current-password" />
         </label>
 
-        <fieldset id="tastes-fieldset" class="field-group hidden">
-          <legend class="field-label">Select tastes you lean toward (pick at least one)</legend>
+        <fieldset id="tastes-fieldset" class="field-group">
+          <legend class="field-label">1. Styles &amp; atmospheres you lean toward (pick at least one)</legend>
           <div id="taste-options" class="taste-grid"></div>
+        </fieldset>
+
+        <fieldset id="artists-fieldset" class="field-group hidden">
+          <legend class="field-label">2. Artists you love (optional)</legend>
+          <div class="search-box">
+            <input
+              id="artist-search-input"
+              type="text"
+              placeholder="Search an artist (e.g. Radiohead, Nils Frahm, Björk)..."
+              autocomplete="off"
+            />
+            <div id="artist-search-results" class="search-results hidden"></div>
+          </div>
+          <div id="selected-artists" class="selected-chips"></div>
+        </fieldset>
+
+        <fieldset id="albums-fieldset" class="field-group hidden">
+          <legend class="field-label">3. Essential albums you already love (optional)</legend>
+          <div class="search-box">
+            <input
+              id="album-search-input"
+              type="text"
+              placeholder="Search an album (e.g. In Rainbows, Blonde, Kind of Blue)..."
+              autocomplete="off"
+            />
+            <div id="album-search-results" class="search-results hidden"></div>
+          </div>
+          <div id="selected-albums" class="selected-chips"></div>
         </fieldset>
 
         <p id="auth-feedback" class="feedback-msg hidden" role="status"></p>
 
         <div class="form-actions">
-          <button id="auth-submit-btn" type="submit" class="primary-btn">Sign in</button>
-          <button id="cancel-auth-btn" type="button" class="text-btn hidden">Back to station</button>
+          <button id="auth-submit-btn" type="submit" class="primary-btn">Enter Station</button>
+          <button id="cancel-auth-btn" type="button" class="text-btn hidden">Cancel</button>
         </div>
       </form>
     </div>
   </section>
 
   <!-- DAILY RECOMMENDATION VIEW -->
-  <main id="station-view" class="station-main hidden" data-aesthetic="editorial">
+  <main id="station-view" class="page-container station-main hidden" data-aesthetic="editorial">
     <div class="station-meta-bar">
       <span class="eyebrow">Today's Transmission — <span id="media-type-badge">Album</span></span>
       <span id="listener-greeting" class="meta-label"></span>
@@ -77,9 +130,9 @@
 
     <article class="album-showcase">
       <div class="artwork-column">
-        <div class="artwork-frame">
+        <button id="station-cover-btn" class="artwork-frame clickable-frame" type="button" aria-label="Open album details">
           <img id="album-cover" src="" alt="" />
-        </div>
+        </button>
         <dl class="album-specs">
           <div>
             <dt>Released</dt>
@@ -95,17 +148,17 @@
           </div>
         </dl>
 
-        <!-- Listener Actions (No ratings) -->
-        <div class="interaction-bar" aria-label="Your actions for this album">
-          <button id="save-btn" class="action-chip" type="button">Save</button>
-          <button id="listened-btn" class="action-chip" type="button">Listened</button>
+        <div class="interaction-bar" aria-label="Shelf actions for this album">
+          <button id="want-btn" class="taste-chip" type="button">Want to listen</button>
+          <button id="listened-btn" class="taste-chip" type="button">Listened</button>
         </div>
+        <button id="station-open-details-btn" class="text-btn detail-inline-link" type="button">Tracklist &amp; full details →</button>
       </div>
 
       <div class="editorial-column">
         <div class="title-block">
-          <p id="album-artist" class="artist-name"></p>
-          <h1 id="album-title" class="album-title"></h1>
+          <button id="album-artist" class="artist-name artist-link-btn" type="button"></button>
+          <h1 id="album-title" class="album-title clickable-title"></h1>
           <div id="album-tags" class="tag-list"></div>
         </div>
 
@@ -118,7 +171,6 @@
           </div>
           <div id="reviews-list" class="reviews-list"></div>
 
-          <!-- Personal Positive Note (Zero scores) -->
           <form id="personal-note-form" class="personal-note-box">
             <label for="personal-note-input" class="field-label">Your positive note</label>
             <textarea
@@ -136,9 +188,239 @@
     </article>
   </main>
 
+  <!-- MY SHELF VIEW -->
+  <section id="shelf-view" class="page-container hidden" aria-label="My album shelf">
+    <div class="section-header-row">
+      <div>
+        <p class="eyebrow">Personal Archive</p>
+        <h1 class="page-title">Your <span class="editorial-accent">Shelf</span></h1>
+      </div>
+      <div class="shelf-search-wrap">
+        <div class="search-box">
+          <input
+            id="shelf-album-search"
+            type="text"
+            placeholder="Search albums (press Enter for full results)..."
+            autocomplete="off"
+          />
+          <div id="shelf-search-results" class="search-results hidden"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="shelf-tabs" role="tablist">
+      <button id="tab-want" class="mode-tab active" type="button">Want to listen <span id="count-want" class="tab-count">0</span></button>
+      <button id="tab-listened" class="mode-tab" type="button">Listened <span id="count-listened" class="tab-count">0</span></button>
+    </div>
+
+    <div id="shelf-grid" class="shelf-grid"></div>
+    <p id="shelf-empty-state" class="empty-state hidden">No albums on this shelf yet. Search above or add from Today's Transmission.</p>
+  </section>
+
+  <!-- SEARCH RESULTS VIEW -->
+  <section id="search-view" class="page-container hidden" aria-label="Search music and listeners">
+    <div class="section-header-row">
+      <div>
+        <p class="eyebrow">Catalog &amp; Community</p>
+        <h1 class="page-title">Search <span class="editorial-accent">Station</span></h1>
+      </div>
+      <form id="global-search-form" class="shelf-search-wrap global-search-form">
+        <div class="search-box">
+          <input
+            id="global-search-input"
+            type="text"
+            placeholder="Search albums, artists, or listeners..."
+            autocomplete="off"
+          />
+          <div id="global-search-dropdown" class="search-results hidden"></div>
+        </div>
+        <button type="submit" class="primary-btn search-submit-btn">Search</button>
+      </form>
+    </div>
+
+    <p id="search-results-status" class="meta-label search-status-line"></p>
+
+    <div id="search-artists-section" class="search-section hidden">
+      <h2 class="section-heading search-section-title">Artists</h2>
+      <div id="search-artists-list" class="artist-results-row"></div>
+    </div>
+
+    <div id="search-albums-section" class="search-section hidden">
+      <h2 class="section-heading search-section-title">Albums</h2>
+      <div id="search-albums-grid" class="shelf-grid"></div>
+    </div>
+
+    <div id="search-listeners-section" class="search-section hidden">
+      <h2 class="section-heading search-section-title">Listeners</h2>
+      <div id="search-listeners-list" class="listeners-grid"></div>
+    </div>
+
+    <p id="search-empty-state" class="empty-state hidden">No matches found. Try another album, artist, or listener name.</p>
+  </section>
+
+  <!-- LISTENERS / SEARCH USERS VIEW -->
+  <section id="listeners-view" class="page-container hidden" aria-label="Search listeners">
+    <div id="listeners-directory">
+      <div class="section-header-row">
+        <div>
+          <p class="eyebrow">Community</p>
+          <h1 class="page-title">Find <span class="editorial-accent">Listeners</span></h1>
+        </div>
+        <div class="shelf-search-wrap">
+          <input
+            id="user-search-input"
+            type="text"
+            placeholder="Search listeners by name..."
+            autocomplete="off"
+          />
+        </div>
+      </div>
+
+      <div id="listeners-list" class="listeners-grid"></div>
+      <p id="listeners-empty" class="empty-state hidden">No listeners found matching that search.</p>
+    </div>
+
+    <div id="public-profile-view" class="hidden">
+      <button id="back-to-listeners-btn" class="text-btn back-link" type="button">← Back to listeners</button>
+
+      <div class="public-profile-header">
+        <div id="public-avatar" class="avatar-circle avatar-lg"></div>
+        <div class="public-profile-info">
+          <p class="eyebrow">Listener Profile</p>
+          <h1 id="public-name" class="page-title"></h1>
+          <p id="public-bio" class="public-bio"></p>
+          <div id="public-tastes" class="tag-list"></div>
+          <div id="public-artists" class="public-artists-wrap"></div>
+        </div>
+      </div>
+
+      <div class="shelf-tabs" role="tablist">
+        <button id="public-tab-listened" class="mode-tab active" type="button">Listened <span id="public-count-listened" class="tab-count">0</span></button>
+        <button id="public-tab-want" class="mode-tab" type="button">Want to listen <span id="public-count-want" class="tab-count">0</span></button>
+      </div>
+
+      <div id="public-shelf-grid" class="shelf-grid"></div>
+      <p id="public-shelf-empty" class="empty-state hidden">Nothing on this shelf yet.</p>
+    </div>
+  </section>
+
+  <!-- ALBUM DETAIL VIEW -->
+  <section id="album-detail-view" class="page-container hidden" aria-label="Album details">
+    <button id="album-detail-back" class="text-btn back-link" type="button">← Back</button>
+
+    <article class="album-showcase">
+      <div class="artwork-column">
+        <div class="artwork-frame">
+          <img id="detail-album-cover" src="" alt="" />
+        </div>
+        <dl class="album-specs">
+          <div>
+            <dt>Released</dt>
+            <dd id="detail-album-year">—</dd>
+          </div>
+          <div>
+            <dt>Runtime</dt>
+            <dd id="detail-album-runtime">—</dd>
+          </div>
+          <div>
+            <dt>Genre</dt>
+            <dd id="detail-album-genre">—</dd>
+          </div>
+        </dl>
+
+        <div class="interaction-bar" aria-label="Shelf actions">
+          <button id="detail-want-btn" class="taste-chip" type="button">Want to listen</button>
+          <button id="detail-listened-btn" class="taste-chip" type="button">Listened</button>
+        </div>
+
+        <!-- Mini Audio Preview Player -->
+        <div id="detail-preview-wrap" class="preview-wrap hidden">
+          <button id="detail-preview-btn" class="preview-btn" type="button" aria-label="Play track preview">
+            <span id="detail-preview-icon" class="preview-icon" aria-hidden="true">▶</span>
+            <span id="detail-preview-text" class="preview-text">Preview</span>
+          </button>
+        </div>
+
+        <p id="detail-album-label" class="meta-label detail-label-note"></p>
+      </div>
+
+      <div class="editorial-column">
+        <div class="title-block">
+          <button id="detail-album-artist-btn" class="artist-name artist-link-btn" type="button"></button>
+          <h1 id="detail-album-title" class="album-title"></h1>
+        </div>
+
+        <p id="detail-album-synopsis" class="album-synopsis hidden"></p>
+
+        <section class="tracklist-section" aria-label="Tracklist">
+          <div class="reviews-header tracklist-header">
+            <h2 class="section-heading">Tracklist</h2>
+            <span id="detail-tracklist-count" class="meta-label"></span>
+          </div>
+          <ol id="detail-tracklist" class="tracklist"></ol>
+        </section>
+
+        <section class="reviews-section" aria-label="Listener notes">
+          <div class="reviews-header">
+            <h2 class="section-heading">Why people love it</h2>
+            <span id="detail-notes-count" class="meta-label"></span>
+          </div>
+          <div id="detail-notes-list" class="reviews-list"></div>
+
+          <form id="detail-note-form" class="personal-note-box">
+            <label for="detail-note-input" class="field-label">Your positive note</label>
+            <textarea
+              id="detail-note-input"
+              rows="2"
+              placeholder="Write what stood out to you—no scores, just impressions..."
+            ></textarea>
+            <div class="note-actions">
+              <button type="submit" class="text-btn">Save note</button>
+              <span id="detail-note-status" class="meta-label"></span>
+            </div>
+          </form>
+        </section>
+      </div>
+    </article>
+  </section>
+
+  <!-- ARTIST DETAIL VIEW -->
+  <section id="artist-detail-view" class="page-container hidden" aria-label="Artist details">
+    <button id="artist-detail-back" class="text-btn back-link" type="button">← Back</button>
+
+    <div class="artist-hero">
+      <div>
+        <p id="detail-artist-genre" class="eyebrow">Artist</p>
+        <h1 id="detail-artist-name" class="artist-page-title"></h1>
+      </div>
+      <button id="detail-artist-fav-btn" class="taste-chip" type="button">+ Favorite artist</button>
+    </div>
+
+    <!-- LPs Section (Always First) -->
+    <div id="artist-lps-section" class="artist-release-section hidden">
+      <div class="reviews-header">
+        <h2 class="section-heading">LPs</h2>
+        <span id="artist-lps-count" class="meta-label"></span>
+      </div>
+      <div id="artist-lps-grid" class="shelf-grid"></div>
+    </div>
+
+    <!-- EPs Section (Second) -->
+    <div id="artist-eps-section" class="artist-release-section hidden">
+      <div class="reviews-header">
+        <h2 class="section-heading">EPs</h2>
+        <span id="artist-eps-count" class="meta-label"></span>
+      </div>
+      <div id="artist-eps-grid" class="shelf-grid"></div>
+    </div>
+
+    <p id="detail-artist-status" class="meta-label"></p>
+    <p id="detail-artist-empty" class="empty-state hidden">No LPs or EPs found for this artist.</p>
+  </section>
+
   <footer class="site-footer">
     <span class="meta-label">No ratings. No algorithms chasing clicks.</span>
-    <div class="dev-controls">
+    <div id="dev-day-controls" class="dev-controls">
       <button id="sim-prev-day" class="text-btn" type="button">← Prev day</button>
       <button id="sim-next-day" class="text-btn" type="button">Next day →</button>
     </div>
