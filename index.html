@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RECOMMENTATION STATION</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Plus+Jakarta+Sans:wght@400;500;600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="brand">
+      <span class="accent-dot" aria-hidden="true"></span>
+      <span class="brand-name">RECOMMENTATION STATION</span>
+    </div>
+
+    <div class="header-controls">
+      <span id="current-date-label" class="meta-label"></span>
+      <button id="edit-profile-btn" class="text-btn hidden" type="button">Profile &amp; tastes</button>
+      <button id="sign-out-btn" class="text-btn hidden" type="button">Sign out</button>
+    </div>
+  </header>
+
+  <!-- AUTH / PROFILE VIEW -->
+  <section id="auth-view" class="auth-panel hidden" aria-label="Account and musical taste">
+    <div class="auth-inner">
+      <p class="eyebrow">Station Access</p>
+      <h1 class="auth-title">Tune your daily <span class="editorial-accent">selection</span>.</h1>
+      <p class="auth-copy">
+        One album a day, matched to what you gravitate toward. No scores, no star ratings—just music and notes from listeners who loved it.
+      </p>
+
+      <div class="auth-mode-switch" role="tablist">
+        <button id="mode-signin" class="mode-tab active" type="button">Sign in</button>
+        <button id="mode-signup" class="mode-tab" type="button">Create account</button>
+      </div>
+
+      <form id="auth-form" class="login-form">
+        <label id="name-field" class="field-group hidden">
+          <span class="field-label">Listener Name</span>
+          <input id="name-input" type="text" placeholder="e.g. Tomás" autocomplete="name" />
+        </label>
+
+        <label class="field-group">
+          <span class="field-label">Email</span>
+          <input id="email-input" type="email" placeholder="you@example.com" required autocomplete="email" />
+        </label>
+
+        <label class="field-group">
+          <span class="field-label">Password</span>
+          <input id="password-input" type="password" placeholder="At least 6 characters" required autocomplete="current-password" />
+        </label>
+
+        <fieldset id="tastes-fieldset" class="field-group hidden">
+          <legend class="field-label">Select tastes you lean toward (pick at least one)</legend>
+          <div id="taste-options" class="taste-grid"></div>
+        </fieldset>
+
+        <p id="auth-feedback" class="feedback-msg hidden" role="status"></p>
+
+        <div class="form-actions">
+          <button id="auth-submit-btn" type="submit" class="primary-btn">Sign in</button>
+          <button id="cancel-auth-btn" type="button" class="text-btn hidden">Back to station</button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <!-- DAILY RECOMMENDATION VIEW -->
+  <main id="station-view" class="station-main hidden" data-aesthetic="editorial">
+    <div class="station-meta-bar">
+      <span class="eyebrow">Today's Transmission — <span id="media-type-badge">Album</span></span>
+      <span id="listener-greeting" class="meta-label"></span>
+    </div>
+
+    <article class="album-showcase">
+      <div class="artwork-column">
+        <div class="artwork-frame">
+          <img id="album-cover" src="" alt="" />
+        </div>
+        <dl class="album-specs">
+          <div>
+            <dt>Released</dt>
+            <dd id="album-year"></dd>
+          </div>
+          <div>
+            <dt>Runtime</dt>
+            <dd id="album-runtime"></dd>
+          </div>
+          <div>
+            <dt>Label</dt>
+            <dd id="album-label"></dd>
+          </div>
+        </dl>
+
+        <!-- Listener Actions (No ratings) -->
+        <div class="interaction-bar" aria-label="Your actions for this album">
+          <button id="save-btn" class="action-chip" type="button">Save</button>
+          <button id="listened-btn" class="action-chip" type="button">Listened</button>
+        </div>
+      </div>
+
+      <div class="editorial-column">
+        <div class="title-block">
+          <p id="album-artist" class="artist-name"></p>
+          <h1 id="album-title" class="album-title"></h1>
+          <div id="album-tags" class="tag-list"></div>
+        </div>
+
+        <p id="album-synopsis" class="album-synopsis"></p>
+
+        <section class="reviews-section" aria-label="Listener notes">
+          <div class="reviews-header">
+            <h2 class="section-heading">Why people love it</h2>
+            <span id="review-source-note" class="meta-label"></span>
+          </div>
+          <div id="reviews-list" class="reviews-list"></div>
+
+          <!-- Personal Positive Note (Zero scores) -->
+          <form id="personal-note-form" class="personal-note-box">
+            <label for="personal-note-input" class="field-label">Your positive note</label>
+            <textarea
+              id="personal-note-input"
+              rows="2"
+              placeholder="Write what stood out to you—no scores, just impressions..."
+            ></textarea>
+            <div class="note-actions">
+              <button type="submit" class="text-btn">Save note</button>
+              <span id="note-status" class="meta-label"></span>
+            </div>
+          </form>
+        </section>
+      </div>
+    </article>
+  </main>
+
+  <footer class="site-footer">
+    <span class="meta-label">No ratings. No algorithms chasing clicks.</span>
+    <div class="dev-controls">
+      <button id="sim-prev-day" class="text-btn" type="button">← Prev day</button>
+      <button id="sim-next-day" class="text-btn" type="button">Next day →</button>
+    </div>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
