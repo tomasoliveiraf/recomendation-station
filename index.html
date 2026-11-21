@@ -220,19 +220,19 @@
       </div>
     </article>
 
-    <!-- HOME DISCOVERY: POPULAR RIGHT NOW -->
-    <section id="popular-global-section" class="home-discovery-section hidden" aria-label="Popular albums right now">
+    <!-- 1. HOME DISCOVERY: RECENT POPULAR RELEASES -->
+    <section id="popular-recent-section" class="home-discovery-section hidden" aria-label="Recent popular releases">
       <div class="reviews-header">
         <div>
-          <p class="eyebrow">Charts</p>
-          <h2 class="discovery-heading">Popular <span class="editorial-accent">right now</span></h2>
+          <p class="eyebrow">Fresh Pressings</p>
+          <h2 class="discovery-heading">New &amp; <span class="editorial-accent">popular</span></h2>
         </div>
-        <span id="popular-global-sub" class="meta-label"></span>
+        <span id="popular-recent-sub" class="meta-label"></span>
       </div>
-      <div id="popular-global-grid" class="discovery-grid"></div>
+      <div id="popular-recent-grid" class="discovery-grid"></div>
     </section>
 
-    <!-- HOME DISCOVERY: POPULAR AMONG LISTENERS -->
+    <!-- 2. HOME DISCOVERY: POPULAR AMONG LISTENERS -->
     <section id="popular-community-section" class="home-discovery-section hidden" aria-label="Popular albums among listeners">
       <div class="reviews-header">
         <div>
@@ -242,6 +242,30 @@
         <span id="popular-community-sub" class="meta-label"></span>
       </div>
       <div id="popular-community-grid" class="discovery-grid"></div>
+    </section>
+
+    <!-- 3. HOME DISCOVERY: UPCOMING POPULAR RELEASES -->
+    <section id="popular-upcoming-section" class="home-discovery-section hidden" aria-label="Popular upcoming releases">
+      <div class="reviews-header">
+        <div>
+          <p class="eyebrow">On The Horizon</p>
+          <h2 class="discovery-heading">Coming <span class="editorial-accent">soon</span></h2>
+        </div>
+        <span id="popular-upcoming-sub" class="meta-label"></span>
+      </div>
+      <div id="popular-upcoming-grid" class="discovery-grid"></div>
+    </section>
+
+    <!-- 4. HOME DISCOVERY: POPULAR OVERALL -->
+    <section id="popular-global-section" class="home-discovery-section hidden" aria-label="Popular albums right now">
+      <div class="reviews-header">
+        <div>
+          <p class="eyebrow">Charts</p>
+          <h2 class="discovery-heading">Popular <span class="editorial-accent">right now</span></h2>
+        </div>
+        <span id="popular-global-sub" class="meta-label"></span>
+      </div>
+      <div id="popular-global-grid" class="discovery-grid"></div>
     </section>
   </main>
 
@@ -274,7 +298,7 @@
       </div>
 
       <div class="shelf-sort-wrap">
-        <label for="shelf-sort-select" class="meta-label">Sort by</label>
+        <label for="shelf-sort-select" class="meta-label">Sort</label>
         <select id="shelf-sort-select" class="sort-select">
           <option value="recent">Recently added</option>
           <option value="year-desc">Release date (Newest)</option>
@@ -361,7 +385,7 @@
       <div class="section-sort-header">
         <h2 class="section-heading">Albums</h2>
         <div class="inline-sort-wrap">
-          <label for="search-sort-select" class="meta-label">Sort by</label>
+          <label for="search-sort-select" class="meta-label">Sort</label>
           <select id="search-sort-select" class="sort-select">
             <option value="popularity" selected>Popularity</option>
             <option value="year-desc">Release date (Newest)</option>
@@ -382,8 +406,8 @@
     <p id="search-empty-state" class="empty-state hidden">No matches found. Try another album, artist, or listener name.</p>
   </section>
 
-  <!-- LISTENERS / SEARCH USERS VIEW -->
-  <section id="listeners-view" class="page-container hidden" aria-label="Search listeners">
+  <!-- LISTENERS & PUBLIC PROFILE VIEW -->
+  <section id="listeners-view" class="page-container hidden" aria-label="Listeners and profiles">
     <div id="listeners-directory">
       <div class="section-header-row">
         <div>
@@ -400,6 +424,11 @@
         </div>
       </div>
 
+      <div class="shelf-tabs listeners-tabs" role="tablist">
+        <button id="listeners-tab-all" class="mode-tab active" type="button">All listeners</button>
+        <button id="listeners-tab-following" class="mode-tab" type="button">Following <span id="listeners-count-following" class="tab-count">0</span></button>
+      </div>
+
       <div id="listeners-list" class="listeners-grid"></div>
       <p id="listeners-empty" class="empty-state hidden">No listeners found matching that search.</p>
     </div>
@@ -410,8 +439,31 @@
       <div class="public-profile-header">
         <div id="public-avatar" class="avatar-circle avatar-lg"></div>
         <div class="public-profile-info">
-          <p class="eyebrow">Listener Profile</p>
-          <h1 id="public-name" class="page-title"></h1>
+          <div class="public-profile-top">
+            <div>
+              <p id="public-eyebrow" class="eyebrow">Listener Profile</p>
+              <h1 id="public-name" class="page-title"></h1>
+            </div>
+            <div class="public-profile-actions">
+              <button id="public-edit-profile-btn" class="taste-chip icon-action-btn hidden" type="button" aria-label="Edit profile" title="Edit profile">
+                <svg class="btn-icon" viewBox="0 0 16 16" aria-hidden="true">
+                  <path d="M11.6 2.4a1.4 1.4 0 0 1 2 2L6 12l-3 .75.75-3 7.85-7.35Z" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round" />
+                </svg>
+                <span>Edit</span>
+              </button>
+              <button id="public-follow-btn" class="taste-chip icon-action-btn hidden" type="button">
+                <span class="btn-label">Follow</span>
+              </button>
+              <button id="public-share-btn" class="taste-chip icon-action-btn" type="button" aria-label="Share profile link" title="Share profile">
+                <svg class="btn-icon" viewBox="0 0 16 16" aria-hidden="true">
+                  <path d="M10.5 3.5h2.25v2.25M12.5 3.75 7.5 8.75M12.25 9v3.25a1 1 0 0 1-1 1h-7.5a1 1 0 0 1-1-1v-7.5a1 1 0 0 1 1-1H7" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+                <span class="btn-label">Share</span>
+              </button>
+            </div>
+          </div>
+
+          <p id="public-follow-stats" class="meta-label follow-stats-line"></p>
           <p id="public-bio" class="public-bio"></p>
           <div id="public-tastes" class="tag-list"></div>
           <div id="public-artists" class="public-artists-wrap"></div>
@@ -432,7 +484,7 @@
         <div id="public-top-five-grid" class="top-five-grid"></div>
       </div>
 
-      <div class="shelf-tabs" role="tablist">
+      <div class="shelf-tabs public-shelf-tabs" role="tablist">
         <button id="public-tab-listened" class="mode-tab active" type="button">Listened <span id="public-count-listened" class="tab-count">0</span></button>
         <button id="public-tab-want" class="mode-tab" type="button">Want to listen <span id="public-count-want" class="tab-count">0</span></button>
         <button id="public-tab-tbr" class="mode-tab" type="button">TBR <span id="public-count-tbr" class="tab-count">0</span></button>
@@ -586,13 +638,16 @@
     <button id="artist-detail-back" class="text-btn back-link" type="button">← Back</button>
 
     <div class="artist-hero">
-      <div>
-        <p id="detail-artist-genre" class="eyebrow">Artist</p>
-        <h1 id="detail-artist-name" class="artist-page-title"></h1>
+      <div class="artist-hero-identity">
+        <div id="detail-artist-avatar" class="avatar-circle avatar-artist-lg"></div>
+        <div class="artist-hero-text">
+          <p id="detail-artist-genre" class="eyebrow">Artist</p>
+          <h1 id="detail-artist-name" class="artist-page-title"></h1>
+        </div>
       </div>
       <div class="artist-hero-controls">
         <div class="inline-sort-wrap">
-          <label for="artist-sort-select" class="meta-label">Sort by</label>
+          <label for="artist-sort-select" class="meta-label">Sort</label>
           <select id="artist-sort-select" class="sort-select">
             <option value="popularity" selected>Popularity</option>
             <option value="year-desc">Release date (Newest)</option>
