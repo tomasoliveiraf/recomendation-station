@@ -114,9 +114,14 @@ let activeArtistEps = [];
 let activeArtistSort = "popularity";
 
 let activePublicProfile = null;
+let publicProfileReqId = 0;
 let publicShelfItems = [];
 let activePublicShelfTab = "listened";
 let viewingOwnProfile = false;
+let activeListenersTab = "all";
+let listenersDirectoryReqId = 0;
+let followListReqId = 0;
+let followingCountCache = null;
 
 let userLists = [];
 let publicLists = [];
@@ -406,17 +411,19 @@ function ensurePublicProfileControls() {
     statsEl = document.createElement("div");
     statsEl.id = "public-follow-stats";
     statsEl.className = "public-follow-stats";
-    const nameEl = $("public-name");
-    if (nameEl) nameEl.insertAdjacentElement("afterend", statsEl);
-    else info.appendChild(statsEl);
+    info.appendChild(statsEl);
   }
+  statsEl.classList.add("public-follow-stats");
 
-  let actionsEl = $("public-profile-actions");
+  let actionsEl = $("public-profile-actions") || info.querySelector(".public-profile-actions");
   if (!actionsEl) {
     actionsEl = document.createElement("div");
     actionsEl.id = "public-profile-actions";
     actionsEl.className = "public-profile-actions";
     statsEl.insertAdjacentElement("afterend", actionsEl);
+  } else {
+    actionsEl.id = "public-profile-actions";
+    actionsEl.classList.add("public-profile-actions");
   }
 
   return { statsEl, actionsEl };
@@ -2157,7 +2164,9 @@ async function loadFollowSummary(targetUserId) {
         ? sb.from("user_follows").select("follower_id").eq("follower_id", sessionUser.id).eq("following_id", targetUserId).maybeSingle()
         : Promise.resolve({ data: null })
     ]);
-    if (followersRes.error) return { followers: 0, following: 0, isFollowing: false, available: false };
+    if (followersRes.error || followingRes.error || relationRes?.error) {
+      return { followers: 0, following: 0, isFollowing: false, available: false };
+    }
     return {
       followers: followersRes.count || 0,
       following: followingRes.count || 0,
@@ -2169,6 +2178,42 @@ async function loadFollowSummary(targetUserId) {
   }
 }
 
+async function loadFollowingCount(force = false) {
+  if (!sessionUser) return 0;
+  if (followingCountCache !== null && !force) return followingCountCache;
+
+  const { count, error } = await sb
+    .from("user_follows")
+    .select("following_id", { count: "exact", head: true })
+    .eq("follower_id", sessionUser.id);
+  if (error) throw error;
+  followingCountCache = count || 0;
+  return followingCountCache;
+}
+
+async function loadFollowProfiles(targetUserId, relation = "followers") {
+  const isFollowers = relation === "followers";
+  const idColumn = isFollowers ? "follower_id" : "following_id";
+  const filterColumn = isFollowers ? "following_id" : "follower_id";
+  const { data: edges, error: edgesError } = await sb
+    .from("user_follows")
+    .select(idColumn)
+    .eq(filterColumn, targetUserId);
+
+  if (edgesError) throw edgesError;
+  const ids = [...new Set((edges || []).map((edge) => edge[idColumn]).filter(Boolean))];
+  if (!ids.length) return [];
+
+  const { data: profiles, error: profilesError } = await sb
+    .from("user_profiles")
+    .select("user_id, display_name, bio, avatar_url, tastes, favorite_artists, top_five_albums")
+    .in("user_id", ids);
+  if (profilesError) throw profilesError;
+
+  const byId = new Map((profiles || []).map((profile) => [profile.user_id, profile]));
+  return ids.map((id) => byId.get(id)).filter(Boolean);
+}
+
 async function toggleFollowUser(targetUserId, currentlyFollowing) {
   if (!sessionUser || sessionUser.id === targetUserId) return currentlyFollowing;
   if (currentlyFollowing) {
@@ -2178,13 +2223,22 @@ async function toggleFollowUser(targetUserId, currentlyFollowing) {
       .eq("follower_id", sessionUser.id)
       .eq("following_id", targetUserId);
     if (error) throw error;
+    if (followingCountCache !== null) followingCountCache = Math.max(0, followingCountCache - 1);
+    updateFollowingCountBadge();
     return false;
   }
   const { error } = await sb
     .from("user_follows")
     .insert({ follower_id: sessionUser.id, following_id: targetUserId });
   if (error) throw error;
+  if (followingCountCache !== null) followingCountCache += 1;
+  updateFollowingCountBadge();
   return true;
+}
+
+function updateFollowingCountBadge() {
+  const badge = $("listeners-count-following");
+  if (badge && followingCountCache !== null) badge.textContent = String(followingCountCache);
 }
 
 async function searchListeners(query = "") {
@@ -4050,35 +4104,191 @@ async function showListenersView(clearHistory = true) {
 }
 
 async function renderListenersDirectory(query = "") {
-  const users = await searchListeners(query);
+  const requestId = ++listenersDirectoryReqId;
   const list = $("listeners-list");
+  const empty = $("listeners-empty");
+  const cleanQuery = String(query || "").trim().toLocaleLowerCase();
+
+  $("listeners-tab-all")?.classList.toggle("active", activeListenersTab === "all");
+  $("listeners-tab-following")?.classList.toggle("active", activeListenersTab === "following");
   list.innerHTML = "";
-  $("listeners-empty").classList.toggle("hidden", users.length > 0);
-  users.forEach((p) => list.appendChild(createListenerCard(p)));
+  empty.classList.add("hidden");
+
+  try {
+    const [count] = await Promise.all([loadFollowingCount()]);
+    if (requestId !== listenersDirectoryReqId) return;
+    if ($("listeners-count-following")) $("listeners-count-following").textContent = String(count);
+
+    let users = [];
+    if (activeListenersTab === "following") {
+      users = await loadFollowProfiles(sessionUser.id, "following");
+      if (cleanQuery) {
+        users = users.filter((profile) => (profile.display_name || "").toLocaleLowerCase().includes(cleanQuery));
+      }
+      followingCountCache = Math.max(count, users.length);
+      updateFollowingCountBadge();
+    } else {
+      users = await searchListeners(query);
+    }
+
+    if (requestId !== listenersDirectoryReqId) return;
+    list.innerHTML = "";
+    users.forEach((profile) => list.appendChild(createListenerCard(profile)));
+
+    if (!users.length) {
+      empty.textContent = activeListenersTab === "following"
+        ? (cleanQuery ? "No followed listeners match this search." : "You're not following anyone yet.")
+        : (cleanQuery ? "No listeners found matching that search." : "No listeners found yet.");
+      empty.classList.remove("hidden");
+    }
+  } catch (error) {
+    if (requestId !== listenersDirectoryReqId) return;
+    console.error("Listeners directory error:", error);
+    empty.textContent = "Couldn't load listeners right now. Please try again.";
+    empty.classList.remove("hidden");
+  }
+}
+
+function ensureFollowListDialog() {
+  let overlay = $("follow-list-overlay");
+  if (overlay) return overlay;
+
+  overlay = document.createElement("div");
+  overlay.id = "follow-list-overlay";
+  overlay.className = "follow-list-overlay";
+  overlay.setAttribute("aria-hidden", "true");
+  overlay.innerHTML = `
+    <section class="follow-list-dialog" role="dialog" aria-modal="true" aria-labelledby="follow-list-title" tabindex="-1">
+      <header class="follow-list-dialog-header">
+        <div>
+          <p class="eyebrow">Listener network</p>
+          <h2 id="follow-list-title" class="section-heading">Followers</h2>
+        </div>
+        <button id="follow-list-close" class="follow-list-close" type="button" aria-label="Close">×</button>
+      </header>
+      <div id="follow-list-items" class="follow-list-items" aria-live="polite">
+        <p class="meta-label">Loading...</p>
+      </div>
+    </section>
+  `;
+  document.body.appendChild(overlay);
+
+  overlay.addEventListener("click", (event) => {
+    if (event.target === overlay) closeFollowListDialog();
+  });
+  $("follow-list-close").addEventListener("click", closeFollowListDialog);
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && $("follow-list-overlay")?.classList.contains("is-open")) {
+      closeFollowListDialog();
+    }
+  });
+  return overlay;
+}
+
+function closeFollowListDialog() {
+  const overlay = $("follow-list-overlay");
+  if (!overlay) return;
+  overlay.classList.remove("is-open");
+  overlay.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("follow-dialog-open");
+}
+
+async function openFollowList(profile, relation) {
+  const requestId = ++followListReqId;
+  const overlay = ensureFollowListDialog();
+  const title = $("follow-list-title");
+  const items = $("follow-list-items");
+  const label = relation === "followers" ? "Followers" : "Following";
+
+  title.textContent = `${profile.display_name}'s ${label}`;
+  items.innerHTML = '<p class="meta-label">Loading listeners...</p>';
+  overlay.classList.add("is-open");
+  overlay.setAttribute("aria-hidden", "false");
+  document.body.classList.add("follow-dialog-open");
+
+  try {
+    const profiles = await loadFollowProfiles(profile.user_id, relation);
+    if (requestId !== followListReqId) return;
+    items.innerHTML = "";
+
+    if (!profiles.length) {
+      const empty = document.createElement("p");
+      empty.className = "empty-state";
+      empty.textContent = relation === "followers" ? "No followers yet." : "Not following anyone yet.";
+      items.appendChild(empty);
+      return;
+    }
+
+    profiles.forEach((person) => {
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = "follow-list-person";
+      const avatar = document.createElement("div");
+      avatar.className = "avatar-circle avatar-md";
+      renderAvatar(avatar, person.avatar_url, person.display_name);
+      const copy = document.createElement("span");
+      copy.className = "follow-list-person-copy";
+      copy.innerHTML = `<strong>${escapeHtml(person.display_name || "Listener")}</strong>${person.bio ? `<span>${escapeHtml(person.bio)}</span>` : ""}`;
+      const arrow = document.createElement("span");
+      arrow.className = "follow-list-person-arrow";
+      arrow.textContent = "›";
+      row.append(avatar, copy, arrow);
+      row.addEventListener("click", () => {
+        closeFollowListDialog();
+        openPublicProfile(person, true, person.user_id === sessionUser.id);
+      });
+      items.appendChild(row);
+    });
+  } catch (error) {
+    if (requestId !== followListReqId) return;
+    console.error("Follow list error:", error);
+    items.innerHTML = `<p class="empty-state">Could not load this list. Please try again.</p>`;
+  }
 }
 
 async function shareListenerProfile(profile, triggerBtn) {
   const shareUrl = `${window.location.origin}${window.location.pathname}?listener=${encodeURIComponent(profile.user_id)}`;
-  const setStatus = (msg) => {
-    const span = triggerBtn?.querySelector("span");
-    if (!span) return;
-    const prev = span.textContent;
-    span.textContent = msg;
-    setTimeout(() => { span.textContent = prev; }, 1800);
+  const label = triggerBtn?.querySelector(".btn-label") || triggerBtn?.querySelector("span");
+  const originalLabel = label?.textContent || "Share";
+  const showFeedback = (message) => {
+    if (!label) return;
+    label.textContent = message;
+    window.setTimeout(() => { if (label.isConnected) label.textContent = originalLabel; }, 1800);
   };
 
   if (navigator.share) {
     try {
-      await navigator.share({ title: `${profile.display_name} · RECOMMENTATION STATION`, url: shareUrl });
+      await navigator.share({
+        title: `${profile.display_name} · RECOMMENTATION STATION`,
+        text: `Check out ${profile.display_name}'s music profile`,
+        url: shareUrl
+      });
       return;
-    } catch { /* fallback to clipboard */ }
+    } catch (error) {
+      // Dismissing the native share sheet is not an error and should not trigger a copy prompt.
+      if (error?.name === "AbortError") return;
+    }
   }
 
   try {
-    await navigator.clipboard.writeText(shareUrl);
-    setStatus("Link copied");
-  } catch {
-    prompt("Copy profile link:", shareUrl);
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(shareUrl);
+    } else {
+      const field = document.createElement("textarea");
+      field.value = shareUrl;
+      field.setAttribute("readonly", "");
+      field.style.position = "fixed";
+      field.style.opacity = "0";
+      document.body.appendChild(field);
+      field.select();
+      const copied = document.execCommand("copy");
+      field.remove();
+      if (!copied) throw new Error("Clipboard unavailable");
+    }
+    showFeedback("Link copied");
+  } catch (error) {
+    console.warn("Clipboard unavailable; showing manual copy fallback:", error);
+    window.prompt("Copy profile link:", shareUrl);
   }
 }
 
@@ -4086,6 +4296,7 @@ async function openPublicProfile(profile, push = true, asOwnTab = false) {
   if (!sessionUser) return showAuthView("signin");
   if (push) pushRoute();
 
+  const requestId = ++publicProfileReqId;
   activePublicProfile = profile;
   viewingOwnProfile = asOwnTab;
   const isMe = profile.user_id === sessionUser.id;
@@ -4121,18 +4332,29 @@ async function openPublicProfile(profile, push = true, asOwnTab = false) {
   }
 
   const { statsEl, actionsEl } = ensurePublicProfileControls();
+  if (statsEl) statsEl.innerHTML = '<span class="meta-label">Loading network...</span>';
+  if (actionsEl) actionsEl.innerHTML = "";
+
   const [items, lists, followSummary] = await Promise.all([
     loadUserShelf(profile.user_id),
     loadUserLists(profile.user_id),
     loadFollowSummary(profile.user_id)
   ]);
+  if (requestId !== publicProfileReqId) return;
 
   if (statsEl) {
     statsEl.innerHTML = `
-      <span><strong id="public-followers-count">${followSummary.followers}</strong> ${followSummary.followers === 1 ? "follower" : "followers"}</span>
-      <span><strong id="public-following-count">${followSummary.following}</strong> following</span>
+      <button type="button" class="follow-stat-btn" data-follow-kind="followers" aria-label="View ${followSummary.followers} followers">
+        <strong>${followSummary.followers}</strong><span>${followSummary.followers === 1 ? "follower" : "followers"}</span>
+      </button>
+      <button type="button" class="follow-stat-btn" data-follow-kind="following" aria-label="View ${followSummary.following} following">
+        <strong>${followSummary.following}</strong><span>following</span>
+      </button>
     `;
     statsEl.classList.toggle("hidden", !followSummary.available);
+    statsEl.querySelectorAll("[data-follow-kind]").forEach((button) => {
+      button.addEventListener("click", () => openFollowList(profile, button.dataset.followKind));
+    });
   }
 
   if (actionsEl) {
@@ -4158,11 +4380,10 @@ async function openPublicProfile(profile, push = true, asOwnTab = false) {
       const syncFollowBtn = () => {
         followBtn.classList.toggle("selected", isFollowing);
         followBtn.innerHTML = isFollowing
-          ? `${ICON_USER_CHECK_SVG}<span>Following</span>`
-          : `${ICON_USER_PLUS_SVG}<span>Follow</span>`;
-        if ($("public-followers-count")) {
-          $("public-followers-count").textContent = followerCount;
-        }
+          ? `${ICON_USER_CHECK_SVG}<span class="btn-label">Following</span>`
+          : `${ICON_USER_PLUS_SVG}<span class="btn-label">Follow</span>`;
+        const followerStat = statsEl?.querySelector('[data-follow-kind="followers"] strong');
+        if (followerStat) followerStat.textContent = String(followerCount);
       };
       syncFollowBtn();
 
@@ -4172,8 +4393,9 @@ async function openPublicProfile(profile, push = true, asOwnTab = false) {
           isFollowing = await toggleFollowUser(profile.user_id, isFollowing);
           followerCount = Math.max(0, followerCount + (isFollowing ? 1 : -1));
           syncFollowBtn();
-        } catch (err) {
-          console.error("Follow toggle error:", err);
+        } catch (error) {
+          console.error("Follow toggle error:", error);
+          followBtn.title = "Couldn't update follow status. Please try again.";
         } finally {
           followBtn.disabled = false;
         }
@@ -4184,7 +4406,9 @@ async function openPublicProfile(profile, push = true, asOwnTab = false) {
     const shareBtn = document.createElement("button");
     shareBtn.type = "button";
     shareBtn.className = "taste-chip profile-action-btn";
-    shareBtn.innerHTML = `${ICON_SHARE_SVG}<span>Share profile</span>`;
+    shareBtn.setAttribute("aria-label", "Share profile link");
+    shareBtn.title = "Share profile";
+    shareBtn.innerHTML = `${ICON_SHARE_SVG}<span class="btn-label">Share</span>`;
     shareBtn.addEventListener("click", () => shareListenerProfile(profile, shareBtn));
     actionsEl.appendChild(shareBtn);
   }
@@ -4359,6 +4583,7 @@ on("sign-out-btn", "click", async () => {
   await sb.auth.signOut();
   sessionUser = null;
   userProfile = null;
+  followingCountCache = null;
   showAuthView("signin");
 });
 
@@ -4537,6 +4762,7 @@ on("auth-form", "submit", async (e) => {
       if (error) throw error;
       if (data.user && data.session) {
         sessionUser = data.user;
+        followingCountCache = null;
         userProfile = await upsertUserProfile({ user_id: data.user.id, ...draft });
         await handlePostLoginNavigation();
       } else {
@@ -4547,6 +4773,7 @@ on("auth-form", "submit", async (e) => {
       const { data, error } = await sb.auth.signInWithPassword({ email, password });
       if (error) throw error;
       sessionUser = data.user;
+      followingCountCache = null;
       userProfile = await loadUserProfile(data.user.id);
       await handlePostLoginNavigation();
     }
@@ -4589,6 +4816,14 @@ on("global-search-form", "submit", (e) => {
   if (q) runFullSearch(q);
 });
 on("user-search-input", "input", debounce(() => renderListenersDirectory($("user-search-input").value), 300));
+on("listeners-tab-all", "click", () => {
+  activeListenersTab = "all";
+  renderListenersDirectory($("user-search-input").value);
+});
+on("listeners-tab-following", "click", () => {
+  activeListenersTab = "following";
+  renderListenersDirectory($("user-search-input").value);
+});
 
 document.addEventListener("click", (e) => {
   if (!e.target.closest("#artists-fieldset")) $("artist-search-results")?.classList.add("hidden");
@@ -4782,6 +5017,7 @@ async function handlePostLoginNavigation() {
     const { data } = await sb.auth.getSession();
     if (data?.session?.user) {
       sessionUser = data.session.user;
+      followingCountCache = null;
       userProfile = await loadUserProfile(sessionUser.id);
       await handlePostLoginNavigation();
     } else {

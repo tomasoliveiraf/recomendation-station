@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Recommendation Station</title>
   <meta name="theme-color" content="#111110" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -16,7 +16,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Plus+Jakarta+Sans:wght@400;500;600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles.css?v=20261121-mobilefix1" />
 </head>
 <body>
   <header class="site-header">
@@ -452,26 +452,10 @@
               <p id="public-eyebrow" class="eyebrow">Listener Profile</p>
               <h1 id="public-name" class="page-title"></h1>
             </div>
-            <div class="public-profile-actions">
-              <button id="public-edit-profile-btn" class="taste-chip icon-action-btn hidden" type="button" aria-label="Edit profile" title="Edit profile">
-                <svg class="btn-icon" viewBox="0 0 16 16" aria-hidden="true">
-                  <path d="M11.6 2.4a1.4 1.4 0 0 1 2 2L6 12l-3 .75.75-3 7.85-7.35Z" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round" />
-                </svg>
-                <span>Edit</span>
-              </button>
-              <button id="public-follow-btn" class="taste-chip icon-action-btn hidden" type="button">
-                <span class="btn-label">Follow</span>
-              </button>
-              <button id="public-share-btn" class="taste-chip icon-action-btn" type="button" aria-label="Share profile link" title="Share profile">
-                <svg class="btn-icon" viewBox="0 0 16 16" aria-hidden="true">
-                  <path d="M10.5 3.5h2.25v2.25M12.5 3.75 7.5 8.75M12.25 9v3.25a1 1 0 0 1-1 1h-7.5a1 1 0 0 1-1-1v-7.5a1 1 0 0 1 1-1H7" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round" />
-                </svg>
-                <span class="btn-label">Share</span>
-              </button>
-            </div>
           </div>
 
-          <p id="public-follow-stats" class="meta-label follow-stats-line"></p>
+          <div id="public-follow-stats" class="public-follow-stats"></div>
+          <div id="public-profile-actions" class="public-profile-actions"></div>
           <p id="public-bio" class="public-bio"></p>
           <div id="public-tastes" class="tag-list"></div>
           <div id="public-artists" class="public-artists-wrap"></div>
@@ -765,7 +749,7 @@
   </footer>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="data.js"></script>
-  <script src="app.js"></script>
+  <script src="data.js?v=20261121-mobilefix1"></script>
+  <script src="app.js?v=20261121-mobilefix1"></script>
 </body>
 </html>

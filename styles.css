@@ -2696,3 +2696,590 @@ textarea:focus {
     font-size: clamp(1.3rem, 6vw, 1.65rem) !important;
   }
 }
+
+
+/* -------------------------------------------------------------
+   Recommendation Station — mobile app polish & layout safeguards
+   ------------------------------------------------------------- */
+html,
+body {
+  max-width: 100%;
+  overscroll-behavior-x: none;
+}
+
+html {
+  overflow-x: clip;
+}
+
+body {
+  overflow-x: clip;
+}
+
+img,
+svg,
+video,
+canvas,
+iframe {
+  max-width: 100%;
+}
+
+.page-container,
+.auth-panel,
+.site-header,
+.site-footer,
+.album-showcase,
+.public-profile-info,
+.artist-hero,
+.section-header-row,
+.reviews-header,
+.shelf-toolbar,
+.listeners-grid,
+.shelf-grid,
+.lists-grid {
+  min-width: 0;
+}
+
+/* Clickable follower/following counters */
+.public-follow-stats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem 1rem;
+  margin-top: 0.65rem;
+}
+
+.follow-stat-btn {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.32rem;
+  padding: 0.15rem 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink-secondary);
+  font: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+  text-align: left;
+  text-underline-offset: 3px;
+}
+
+.follow-stat-btn strong {
+  color: var(--ink-primary);
+  font-weight: 600;
+}
+
+.follow-stat-btn:hover span,
+.follow-stat-btn:focus-visible span {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.follow-stat-btn:focus-visible,
+.follow-list-close:focus-visible,
+.follow-list-person:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+/* Followers/following list dialog */
+.follow-list-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem;
+  background: rgba(0, 0, 0, 0.64);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+
+.follow-list-overlay.is-open {
+  display: flex;
+}
+
+.follow-list-dialog {
+  width: min(100%, 460px);
+  max-height: min(76vh, 680px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: 18px;
+  background: var(--bg-page);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.38);
+}
+
+.follow-list-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.15rem 1.2rem 0.9rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.follow-list-dialog-header .eyebrow {
+  margin: 0 0 0.2rem;
+  font-size: 0.68rem;
+}
+
+.follow-list-dialog-header .section-heading {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.follow-list-close {
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: 50%;
+  background: var(--bg-surface);
+  color: var(--ink-primary);
+  font: inherit;
+  font-size: 1.45rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.follow-list-items {
+  min-height: 110px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 0.4rem 0.8rem 0.8rem;
+}
+
+.follow-list-person {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.75rem 0.4rem;
+  border: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  background: transparent;
+  color: var(--ink-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.follow-list-person:last-child {
+  border-bottom: 0;
+}
+
+.follow-list-person:hover {
+  background: var(--bg-surface);
+}
+
+.follow-list-person-copy {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+}
+
+.follow-list-person-copy strong {
+  overflow: hidden;
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.follow-list-person-copy > span {
+  overflow: hidden;
+  color: var(--ink-secondary);
+  font-size: 0.76rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.follow-list-person-arrow {
+  flex: 0 0 auto;
+  color: var(--ink-secondary);
+  font-size: 1.4rem;
+}
+
+body.follow-dialog-open {
+  overflow: hidden;
+}
+
+@media (max-width: 760px) {
+  html,
+  body {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: clip;
+  }
+
+  body {
+    min-width: 320px;
+    padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .site-header {
+    position: sticky;
+    top: 0;
+    z-index: 900;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: nowrap;
+    gap: 0.55rem;
+    width: 100%;
+    padding: 0.7rem max(14px, var(--gutter)) 0.65rem;
+    background: color-mix(in srgb, var(--bg-page) 94%, transparent);
+    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(16px);
+  }
+
+  .brand {
+    min-width: 0;
+    flex: 1 1 auto;
+    gap: 0.45rem;
+  }
+
+  .brand-name-btn {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    font-size: clamp(0.58rem, 2.3vw, 0.72rem);
+    letter-spacing: 0.06em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .header-controls {
+    min-width: 0;
+    flex: 0 0 auto;
+    gap: 0.6rem;
+  }
+
+  .header-controls .text-btn {
+    white-space: nowrap;
+  }
+
+  .page-container,
+  .auth-panel {
+    width: 100%;
+    max-width: 100%;
+    padding-left: max(14px, var(--gutter));
+    padding-right: max(14px, var(--gutter));
+  }
+
+  .page-container {
+    padding-top: 1rem;
+    padding-bottom: 1.75rem;
+  }
+
+  .section-header-row,
+  .reviews-header,
+  .station-meta-bar,
+  .tbr-bar-head,
+  .lists-toolbar {
+    min-width: 0;
+    flex-wrap: wrap;
+    gap: 0.65rem;
+  }
+
+  .section-header-row > *,
+  .reviews-header > *,
+  .station-meta-bar > * {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .shelf-search-wrap,
+  .global-search-form,
+  .search-box {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .global-search-form {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.5rem;
+  }
+
+  .global-search-form .search-box {
+    min-width: 0;
+  }
+
+  .global-search-form input {
+    min-width: 0;
+  }
+
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  input[type="date"],
+  textarea,
+  select {
+    min-width: 0;
+    max-width: 100%;
+    font-size: 16px;
+  }
+
+  button,
+  .primary-btn,
+  .taste-chip,
+  .mini-btn {
+    max-width: 100%;
+  }
+
+  .album-showcase,
+  .artwork-column,
+  .editorial-column,
+  .title-block,
+  .reviews-section,
+  .tracklist-section,
+  .similar-section {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .album-showcase {
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
+  }
+
+  .artwork-column,
+  .editorial-column {
+    display: contents;
+  }
+
+  .vinyl-stage {
+    width: min(76vw, 270px);
+    max-width: 100%;
+    padding-right: 18px;
+  }
+
+  .vinyl-disc {
+    max-width: none;
+  }
+
+  .album-title,
+  .artist-page-title,
+  .page-title,
+  .discovery-heading {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+
+  .album-specs {
+    min-width: 0;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .album-specs > div {
+    min-width: 0;
+  }
+
+  .album-specs dd {
+    overflow-wrap: anywhere;
+  }
+
+  .interaction-bar,
+  .form-actions,
+  .note-actions,
+  .public-profile-actions {
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+
+  .search-results {
+    left: 0;
+    right: 0;
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .search-result-item,
+  .search-result-left {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .search-quick-actions {
+    flex-wrap: wrap;
+  }
+
+  .shelf-toolbar {
+    min-width: 0;
+  }
+
+  .shelf-tabs {
+    max-width: 100%;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .shelf-grid,
+  .lists-grid,
+  .listeners-grid,
+  .discovery-grid,
+  .similar-albums-grid {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .shelf-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .listeners-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.7rem;
+  }
+
+  .listener-card {
+    width: 100%;
+    min-width: 0;
+    padding: 0.85rem;
+    border-radius: 12px;
+  }
+
+  .listener-card-info,
+  .listener-card-name,
+  .listener-card-bio,
+  .listener-card-tastes {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .lists-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .top-five-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .top-five-slot,
+  .top-five-title,
+  .top-five-artist {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .public-profile-header {
+    display: grid;
+    grid-template-columns: 58px minmax(0, 1fr);
+    column-gap: 0.8rem;
+    row-gap: 0;
+    align-items: start;
+  }
+
+  .public-profile-header > .avatar-circle {
+    width: 58px !important;
+    height: 58px !important;
+    min-width: 58px;
+  }
+
+  .public-profile-info,
+  .public-profile-top,
+  .public-profile-top > div:first-child {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .public-profile-actions {
+    gap: 0.4rem;
+  }
+
+  .public-profile-actions .profile-action-btn {
+    min-height: 38px;
+    padding: 0.4rem 0.65rem;
+  }
+
+  .public-follow-stats {
+    gap: 0.4rem 0.85rem;
+  }
+
+  .public-follow-stats .follow-stat-btn {
+    min-height: 34px;
+  }
+
+  .artist-results-row {
+    max-width: 100%;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+  }
+
+  .track-row {
+    min-width: 0;
+    gap: 0.45rem;
+  }
+
+  .track-name {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .follow-list-overlay {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .follow-list-dialog {
+    width: 100%;
+    max-width: none;
+    max-height: min(82vh, 760px);
+    border-radius: 20px 20px 0 0;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    animation: followSheetIn 180ms ease-out;
+  }
+
+  .follow-list-dialog-header {
+    padding: 1rem 1rem 0.85rem;
+  }
+
+  .follow-list-items {
+    padding: 0.35rem 0.85rem 1rem;
+  }
+
+  .follow-list-person {
+    min-height: 62px;
+  }
+
+  .site-footer {
+    padding-bottom: calc(1.25rem + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+@keyframes followSheetIn {
+  from { transform: translateY(18px); opacity: 0.85; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@media (max-width: 380px) {
+  .global-search-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .global-search-form .search-submit-btn {
+    width: 100%;
+  }
+
+  .shelf-grid,
+  .lists-grid {
+    gap: 0.9rem 0.55rem;
+  }
+
+  .public-profile-actions .profile-action-btn {
+    font-size: 0.72rem;
+  }
+}
