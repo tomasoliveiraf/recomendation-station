@@ -7,83 +7,82 @@ const THEME_KEY = "recommentation_station_theme_v1";
 const PREVIEW_MAX_SECONDS = 15;
 
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const $ = (id) => document.getElementById(id);
 
-const hasLastFmKey = Boolean(
-  LASTFM_API_KEY &&
-  !LASTFM_API_KEY.startsWith("YOUR_") &&
-  LASTFM_API_KEY.trim().length > 10
-);
-
-// Maps your 24 onboarding tastes to clean Last.fm community tags
 const TASTE_TO_LASTFM_TAGS = {
-  "Ambient & Experimental": ["ambient", "experimental"],
-  "Jazz & Spiritual": ["jazz", "spiritual jazz"],
-  "Post-Punk & Art Rock": ["post-punk", "art rock"],
-  "Electronic & IDM": ["idm", "electronic"],
-  "Folk & Acoustic": ["folk", "acoustic"],
-  "Soul & Neo-Soul": ["neo-soul", "soul"],
-  "Hip-Hop & Instrumental": ["hip-hop", "instrumental hip-hop"],
-  "Shoegaze & Dream Pop": ["shoegaze", "dream pop"],
-  "Indie & Alternative": ["indie rock", "alternative"],
-  "Modern Classical": ["modern classical", "neoclassical"],
-  "Post-Rock & Math Rock": ["post-rock", "math rock"],
-  "Psychedelic & Krautrock": ["psychedelic rock", "krautrock"],
-  "Synthpop & New Wave": ["synthpop", "new wave"],
-  "R&B & Funk": ["funk", "rnb"],
-  "Trip-Hop & Downtempo": ["trip-hop", "downtempo"],
-  "House & Techno": ["house", "techno"],
-  "Metal & Doom": ["doom metal", "post-metal"],
-  "Punk & Hardcore": ["punk", "post-hardcore"],
-  "Blues & Roots": ["blues", "americana"],
-  "Bossa Nova & MPB": ["bossa nova", "mpb"],
-  "Afrobeat & Highlife": ["afrobeat", "highlife"],
-  "Dub & Reggae": ["dub", "reggae"],
-  "Soundtracks & Scores": ["soundtrack", "film score"],
-  "Singer-Songwriter": ["singer-songwriter", "indie folk"]
+  "Pop": ["pop"],
+  "Alternative Pop": ["indie pop", "dream pop", "art pop"],
+  "Indie": ["indie", "indie rock"],
+  "Rock": ["rock", "classic rock"],
+  "Alternative Rock": ["alternative rock", "post-punk"],
+  "Hip-Hop": ["hip-hop", "rap"],
+  "R&B": ["rnb", "contemporary rnb"],
+  "Soul": ["soul", "neo-soul"],
+  "Electronic": ["electronic", "idm", "house"],
+  "Ambient": ["ambient", "downtempo"],
+  "Jazz": ["jazz", "spiritual jazz"],
+  "Folk": ["folk", "indie folk"],
+  "Classical": ["classical", "modern classical"],
+  "Metal": ["metal", "post-metal"],
+  "Punk": ["punk", "post-hardcore"],
+  "Funk": ["funk", "groove"],
+  "Blues": ["blues"],
+  "Reggae & Dub": ["reggae", "dub"],
+  "MPB & Bossa": ["mpb", "bossa nova"],
+  "Latin": ["latin", "latin alternative"],
+  "Country": ["country", "alt-country"],
+  "Soundtracks": ["soundtrack", "film score"],
+  "Experimental": ["experimental", "avant-garde"]
 };
 
+const VINYL_PLACEHOLDER_SVG = `
+  <svg class="slot-vinyl-svg" viewBox="0 0 28 28" aria-hidden="true">
+    <circle cx="14" cy="14" r="12" fill="none" stroke="currentColor" stroke-width="1.2" />
+    <circle cx="14" cy="14" r="8.2" fill="none" stroke="currentColor" stroke-width="0.6" opacity="0.45" />
+    <circle cx="14" cy="14" r="4" fill="none" stroke="currentColor" stroke-width="1" />
+    <circle cx="14" cy="14" r="1.1" fill="currentColor" />
+  </svg>
+`;
+
+// ------------------------------------------------------------
 // App State
+// ------------------------------------------------------------
 let sessionUser = null;
 let userProfile = null;
 let currentView = "station";
-let currentRouteState = { type: "station" };
+let currentRoute = { type: "station" };
 let viewHistory = [];
 let authMode = "signin";
 let dayOffset = 0;
 
 let currentAlbum = null;
 let currentAlbumCoverUrl = "";
-let currentInteraction = { saved: false, listened: false, positive_note: "" };
-let stationRequestId = 0;
+let currentInteraction = emptyInteraction();
+let stationReqId = 0;
 
 let shelfItems = [];
 let activeShelfTab = "want";
-
+let activeShelfSort = "recent";
 let lastSearchQuery = "";
 
-let publicProfileCurrent = null;
 let publicShelfItems = [];
 let activePublicShelfTab = "listened";
 
-// Detail Views State
 let activeDetailAlbum = null;
-let activeDetailInteraction = { saved: false, listened: false, positive_note: "" };
-let detailRequestId = 0;
+let activeDetailInteraction = emptyInteraction();
+let detailReqId = 0;
 let defaultPreviewTrack = null;
 
 let activeDetailArtist = null;
-let artistRequestId = 0;
+let artistReqId = 0;
 
-// Shared Audio Preview Controller
+let draftArtists = [];
+let draftTopFive = [];
+let draftAvatarUrl = "";
+
 const previewAudio = new Audio();
 let activePreviewTrack = null;
 
-// Profile Form Draft State
-let draftArtists = [];
-let draftAlbums = [];
-let draftAvatarUrl = "";
-
-// Cover URL Cache
 let coverCache = {};
 try {
   coverCache = JSON.parse(localStorage.getItem(COVER_CACHE_KEY) || "{}");
@@ -91,208 +90,53 @@ try {
   coverCache = {};
 }
 
-// DOM References
-const mainNav = document.getElementById("main-nav");
-const navStation = document.getElementById("nav-station");
-const navShelf = document.getElementById("nav-shelf");
-const navSearch = document.getElementById("nav-search");
-const navListeners = document.getElementById("nav-listeners");
-const navProfile = document.getElementById("nav-profile");
-const brandHomeBtn = document.getElementById("brand-home-btn");
-const themeToggleBtn = document.getElementById("theme-toggle-btn");
-const signOutBtn = document.getElementById("sign-out-btn");
-const currentDateLabel = document.getElementById("current-date-label");
-const devDayControls = document.getElementById("dev-day-controls");
-
-// Views
-const authView = document.getElementById("auth-view");
-const stationView = document.getElementById("station-view");
-const shelfView = document.getElementById("shelf-view");
-const searchView = document.getElementById("search-view");
-const listenersView = document.getElementById("listeners-view");
-const albumDetailView = document.getElementById("album-detail-view");
-const artistDetailView = document.getElementById("artist-detail-view");
-
-// Auth / Profile Elements
-const authEyebrow = document.getElementById("auth-eyebrow");
-const authHeading = document.getElementById("auth-heading");
-const authCopy = document.getElementById("auth-copy");
-const authModeSwitch = document.getElementById("auth-mode-switch");
-const modeSigninBtn = document.getElementById("mode-signin");
-const modeSignupBtn = document.getElementById("mode-signup");
-const authForm = document.getElementById("auth-form");
-
-const avatarField = document.getElementById("avatar-field");
-const avatarPreview = document.getElementById("avatar-preview");
-const avatarFileInput = document.getElementById("avatar-file-input");
-const removeAvatarBtn = document.getElementById("remove-avatar-btn");
-
-const nameField = document.getElementById("name-field");
-const nameInput = document.getElementById("name-input");
-const bioField = document.getElementById("bio-field");
-const bioInput = document.getElementById("bio-input");
-const emailField = document.getElementById("email-field");
-const emailInput = document.getElementById("email-input");
-const passwordField = document.getElementById("password-field");
-const passwordInput = document.getElementById("password-input");
-
-const tastesFieldset = document.getElementById("tastes-fieldset");
-const tasteOptionsContainer = document.getElementById("taste-options");
-const artistsFieldset = document.getElementById("artists-fieldset");
-const artistSearchInput = document.getElementById("artist-search-input");
-const artistSearchResults = document.getElementById("artist-search-results");
-const selectedArtistsContainer = document.getElementById("selected-artists");
-const albumsFieldset = document.getElementById("albums-fieldset");
-const albumSearchInput = document.getElementById("album-search-input");
-const albumSearchResults = document.getElementById("album-search-results");
-const selectedAlbumsContainer = document.getElementById("selected-albums");
-
-const authFeedback = document.getElementById("auth-feedback");
-const authSubmitBtn = document.getElementById("auth-submit-btn");
-const cancelAuthBtn = document.getElementById("cancel-auth-btn");
-
-// Station Elements
-const stationCoverBtn = document.getElementById("station-cover-btn");
-const stationOpenDetailsBtn = document.getElementById("station-open-details-btn");
-const stationArtistBtn = document.getElementById("album-artist");
-const stationTitleEl = document.getElementById("album-title");
-const wantBtn = document.getElementById("want-btn");
-const listenedBtn = document.getElementById("listened-btn");
-const personalNoteForm = document.getElementById("personal-note-form");
-const personalNoteInput = document.getElementById("personal-note-input");
-const noteStatus = document.getElementById("note-status");
-
-// Shelf Elements
-const shelfAlbumSearch = document.getElementById("shelf-album-search");
-const shelfSearchResults = document.getElementById("shelf-search-results");
-const tabWant = document.getElementById("tab-want");
-const tabListened = document.getElementById("tab-listened");
-const countWant = document.getElementById("count-want");
-const countListened = document.getElementById("count-listened");
-const shelfGrid = document.getElementById("shelf-grid");
-const shelfEmptyState = document.getElementById("shelf-empty-state");
-
-// Search Results Page Elements
-const globalSearchForm = document.getElementById("global-search-form");
-const globalSearchInput = document.getElementById("global-search-input");
-const globalSearchDropdown = document.getElementById("global-search-dropdown");
-const searchResultsStatus = document.getElementById("search-results-status");
-const searchArtistsSection = document.getElementById("search-artists-section");
-const searchArtistsList = document.getElementById("search-artists-list");
-const searchAlbumsSection = document.getElementById("search-albums-section");
-const searchAlbumsGrid = document.getElementById("search-albums-grid");
-const searchListenersSection = document.getElementById("search-listeners-section");
-const searchListenersList = document.getElementById("search-listeners-list");
-const searchEmptyState = document.getElementById("search-empty-state");
-
-// Listeners Elements
-const listenersDirectory = document.getElementById("listeners-directory");
-const userSearchInput = document.getElementById("user-search-input");
-const listenersList = document.getElementById("listeners-list");
-const listenersEmpty = document.getElementById("listeners-empty");
-const publicProfileView = document.getElementById("public-profile-view");
-const backToListenersBtn = document.getElementById("back-to-listeners-btn");
-const publicTabListened = document.getElementById("public-tab-listened");
-const publicTabWant = document.getElementById("public-tab-want");
-const publicCountListened = document.getElementById("public-count-listened");
-const publicCountWant = document.getElementById("public-count-want");
-const publicShelfGrid = document.getElementById("public-shelf-grid");
-const publicShelfEmpty = document.getElementById("public-shelf-empty");
-
-// Album Detail Elements
-const albumDetailBack = document.getElementById("album-detail-back");
-const detailAlbumCover = document.getElementById("detail-album-cover");
-const detailAlbumYear = document.getElementById("detail-album-year");
-const detailAlbumRuntime = document.getElementById("detail-album-runtime");
-const detailAlbumGenre = document.getElementById("detail-album-genre");
-const detailWantBtn = document.getElementById("detail-want-btn");
-const detailListenedBtn = document.getElementById("detail-listened-btn");
-const detailPreviewWrap = document.getElementById("detail-preview-wrap");
-const detailPreviewBtn = document.getElementById("detail-preview-btn");
-const detailPreviewIcon = document.getElementById("detail-preview-icon");
-const detailPreviewText = document.getElementById("detail-preview-text");
-const detailAlbumLabel = document.getElementById("detail-album-label");
-const detailAlbumArtistBtn = document.getElementById("detail-album-artist-btn");
-const detailAlbumTitle = document.getElementById("detail-album-title");
-const detailAlbumSynopsis = document.getElementById("detail-album-synopsis");
-const detailTracklistCount = document.getElementById("detail-tracklist-count");
-const detailTracklist = document.getElementById("detail-tracklist");
-const detailNotesCount = document.getElementById("detail-notes-count");
-const detailNotesList = document.getElementById("detail-notes-list");
-const detailNoteForm = document.getElementById("detail-note-form");
-const detailNoteInput = document.getElementById("detail-note-input");
-const detailNoteStatus = document.getElementById("detail-note-status");
-
-// Artist Detail Elements
-const artistDetailBack = document.getElementById("artist-detail-back");
-const detailArtistGenre = document.getElementById("detail-artist-genre");
-const detailArtistName = document.getElementById("detail-artist-name");
-const detailArtistFavBtn = document.getElementById("detail-artist-fav-btn");
-const artistLpsSection = document.getElementById("artist-lps-section");
-const artistLpsCount = document.getElementById("artist-lps-count");
-const artistLpsGrid = document.getElementById("artist-lps-grid");
-const artistEpsSection = document.getElementById("artist-eps-section");
-const artistEpsCount = document.getElementById("artist-eps-count");
-const artistEpsGrid = document.getElementById("artist-eps-grid");
-const detailArtistStatus = document.getElementById("detail-artist-status");
-const detailArtistEmpty = document.getElementById("detail-artist-empty");
+function emptyInteraction() {
+  return { saved: false, listened: false, is_tbr: false, positive_note: "" };
+}
 
 // ------------------------------------------------------------
-// Theme Management (Dark by default)
+// Theme (Dark Default)
 // ------------------------------------------------------------
 function applyTheme(theme) {
   const isLight = theme === "light";
   if (isLight) {
     document.documentElement.setAttribute("data-theme", "light");
-    themeToggleBtn.textContent = "Dark";
+    $("theme-toggle-btn").textContent = "Dark";
   } else {
     document.documentElement.removeAttribute("data-theme");
-    themeToggleBtn.textContent = "Light";
+    $("theme-toggle-btn").textContent = "Light";
   }
   try {
     localStorage.setItem(THEME_KEY, isLight ? "light" : "dark");
-  } catch {
-    // Ignore storage errors
-  }
+  } catch { /* ignore */ }
 }
 
-(function initTheme() {
-  const saved = localStorage.getItem(THEME_KEY);
-  applyTheme(saved === "light" ? "light" : "dark");
-})();
-
-themeToggleBtn.addEventListener("click", () => {
-  const isCurrentlyLight = document.documentElement.getAttribute("data-theme") === "light";
-  applyTheme(isCurrentlyLight ? "dark" : "light");
+applyTheme(localStorage.getItem(THEME_KEY) === "light" ? "light" : "dark");
+$("theme-toggle-btn").addEventListener("click", () => {
+  const isLight = document.documentElement.getAttribute("data-theme") === "light";
+  applyTheme(isLight ? "dark" : "light");
 });
 
 // ------------------------------------------------------------
-// Audio Preview Engine (15s clip with gentle fade-out)
+// Audio Preview Controller (15s clip + vinyl spin + fade-out)
 // ------------------------------------------------------------
 function updatePreviewUI() {
   const isPlaying = Boolean(activePreviewTrack && !previewAudio.paused);
-  const displayTrack = activePreviewTrack || defaultPreviewTrack;
+  const track = activePreviewTrack || defaultPreviewTrack;
 
-  if (!displayTrack) {
-    detailPreviewWrap.classList.add("hidden");
-    return;
-  }
+  $("detail-vinyl-stage")?.classList.toggle("is-playing", isPlaying);
+  $("detail-preview-wrap").classList.toggle("hidden", !track);
+  if (!track) return;
 
-  detailPreviewWrap.classList.remove("hidden");
-  detailPreviewBtn.classList.toggle("playing", isPlaying);
-  detailPreviewIcon.textContent = isPlaying ? "■" : "▶";
-  detailPreviewText.textContent = isPlaying
-    ? `Playing · ${displayTrack.trackName}`
-    : `Preview · ${displayTrack.trackName}`;
+  $("detail-preview-btn").classList.toggle("playing", isPlaying);
+  $("detail-preview-icon").textContent = isPlaying ? "■" : "▶";
+  $("detail-preview-text").textContent = `${isPlaying ? "Playing" : "Preview"} · ${track.trackName}`;
 
-  detailTracklist.querySelectorAll(".track-row").forEach((row) => {
-    const isRowPlaying =
-      isPlaying && String(row.dataset.trackId) === String(activePreviewTrack.trackId);
-    row.classList.toggle("is-playing", isRowPlaying);
+  $("detail-tracklist").querySelectorAll(".track-row").forEach((row) => {
+    const active = isPlaying && row.dataset.trackId === String(activePreviewTrack.trackId);
+    row.classList.toggle("is-playing", active);
     const numEl = row.querySelector(".track-num");
-    if (numEl) {
-      numEl.textContent = isRowPlaying ? "▶" : row.dataset.trackNum;
-    }
+    if (numEl) numEl.textContent = active ? "▶" : row.dataset.trackNum;
   });
 }
 
@@ -306,51 +150,29 @@ function stopPreview() {
 
 function togglePreviewTrack(track) {
   if (!track?.previewUrl) return;
-
-  const isSamePlaying =
-    activePreviewTrack &&
-    String(activePreviewTrack.trackId) === String(track.trackId) &&
-    !previewAudio.paused;
-
-  if (isSamePlaying) {
-    stopPreview();
-    return;
-  }
+  const isSame = activePreviewTrack && String(activePreviewTrack.trackId) === String(track.trackId) && !previewAudio.paused;
+  if (isSame) return stopPreview();
 
   previewAudio.pause();
   previewAudio.src = track.previewUrl;
   previewAudio.currentTime = 0;
   previewAudio.volume = 1;
   activePreviewTrack = track;
-
-  previewAudio
-    .play()
-    .then(() => updatePreviewUI())
-    .catch((err) => {
-      console.error("Preview playback error:", err);
-      stopPreview();
-    });
+  previewAudio.play().then(updatePreviewUI).catch(stopPreview);
 }
 
 previewAudio.addEventListener("timeupdate", () => {
   if (!activePreviewTrack || previewAudio.paused) return;
   const t = previewAudio.currentTime;
-
-  if (t >= PREVIEW_MAX_SECONDS) {
-    stopPreview();
-    return;
-  }
-
+  if (t >= PREVIEW_MAX_SECONDS) return stopPreview();
   if (t >= PREVIEW_MAX_SECONDS - 1.5) {
-    const remaining = Math.max(0, PREVIEW_MAX_SECONDS - t);
-    previewAudio.volume = Math.min(1, remaining / 1.5);
+    previewAudio.volume = Math.min(1, Math.max(0, PREVIEW_MAX_SECONDS - t) / 1.5);
   }
 });
-
 previewAudio.addEventListener("ended", stopPreview);
 
 // ------------------------------------------------------------
-// Utilities
+// Pure Helpers & Strict Anti-Single Classification
 // ------------------------------------------------------------
 function escapeHtml(str) {
   const div = document.createElement("div");
@@ -366,83 +188,112 @@ function debounce(fn, delay = 280) {
   };
 }
 
+function hashString(str) {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash << 5) - hash + str.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash);
+}
+
+function lowercaseFirst(str) {
+  return str ? str.charAt(0).toLowerCase() + str.slice(1) : "";
+}
+
+function normalizeTitleKey(title, artist) {
+  return `${(artist || "").toLowerCase().trim()}::${(title || "").toLowerCase().trim()}`;
+}
+
 function formatDuration(ms) {
   if (!ms || Number.isNaN(ms)) return "";
-  const totalSeconds = Math.floor(ms / 1000);
-  const mins = Math.floor(totalSeconds / 60);
-  const secs = totalSeconds % 60;
-  return `${mins}:${String(secs).padStart(2, "0")}`;
+  const s = Math.floor(ms / 1000);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+function isFutureReleaseDate(dateStr) {
+  if (!dateStr) return false;
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return d > today;
+}
+
+function isItemTbr(item) {
+  return Boolean(item && !item.listened && (item.is_tbr || (item.saved && isFutureReleaseDate(item.release_date))));
+}
+
+function formatShortReleaseDate(dateStr) {
+  if (!dateStr) return "Upcoming";
+  const d = new Date(dateStr);
+  return Number.isNaN(d.getTime())
+    ? dateStr
+    : d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+function isSingleTitle(title) {
+  if (!title) return true;
+  return /(\s*[-–—]\s*single|\(single\)|\[single\]|\bsingle)$/i.test(title.trim());
+}
+
+function classifyRelease(item) {
+  const name = (item.collectionName || item.title || "").trim();
+  const count = Number(item.trackCount || 0);
+
+  if (isSingleTitle(name)) return "single";
+  if (/(\s*[-–—]\s*ep|\(ep\)|\[ep\]|\bep)$/i.test(name)) return "ep";
+  if (count > 0 && count <= 2) return "single";
+  if (count >= 3 && count <= 4) return "ep";
+  return "lp";
+}
+
+function isNonSingleRelease(item) {
+  return Boolean(item?.collectionName && item?.artistName && classifyRelease(item) !== "single");
+}
+
+function isJunkTitle(title) {
+  if (!title) return true;
+  const t = title.toLowerCase().trim();
+  return (
+    t === "(null)" ||
+    t === "undefined" ||
+    isSingleTitle(t) ||
+    /\b(greatest hits|best of|the essentials|anthology|collection|karaoke|tribute to)\b/i.test(t)
+  );
 }
 
 function cleanCopyrightToLabel(copyright) {
   if (!copyright) return "—";
-  let cleaned = copyright
+  const cleaned = copyright
     .replace(/^[℗©\s\d\-–,]+/g, "")
     .replace(/\b(under exclusive license to|all rights reserved).*/i, "")
     .trim();
-  if (cleaned.length > 26) {
-    cleaned = cleaned.slice(0, 25).trim() + "…";
-  }
-  return cleaned || "—";
+  return cleaned.length > 26 ? `${cleaned.slice(0, 25).trim()}…` : cleaned || "—";
 }
 
 function cleanLastFmWiki(rawSummary) {
   if (!rawSummary) return "";
-  const withoutReadMore = rawSummary.replace(/<a\s+href="https?:\/\/www\.last\.fm[^>]*>.*?<\/a>.*/is, "");
+  const stripped = rawSummary.replace(/<a\s+href="https?:\/\/www\.last\.fm[^>]*>.*?<\/a>.*/is, "");
   const temp = document.createElement("div");
-  temp.innerHTML = withoutReadMore;
-  const text = (temp.textContent || temp.innerText || "").replace(/\s+/g, " ").trim();
+  temp.innerHTML = stripped;
+  const text = (temp.textContent || "").replace(/\s+/g, " ").trim();
   if (text.length < 35) return "";
   return text.length > 360 ? `${text.slice(0, 355).trim()}…` : text;
 }
 
 function pickAestheticForTags(tags = []) {
   const joined = tags.join(" ").toLowerCase();
-  if (/(electronic|idm|techno|house|post-punk|industrial|math|experimental|synth|dub)/.test(joined)) {
-    return "modular";
-  }
-  if (/(jazz|folk|acoustic|dream pop|shoegaze|classical|bossa|mpb|ambient|singer-songwriter)/.test(joined)) {
-    return "italic";
-  }
+  if (/(electronic|idm|techno|house|post-punk|industrial|math|experimental|synth|dub|metal|punk)/.test(joined)) return "modular";
+  if (/(jazz|folk|acoustic|dream pop|shoegaze|classical|bossa|mpb|ambient|alternative pop)/.test(joined)) return "italic";
   return "editorial";
-}
-
-function classifyRelease(item) {
-  const name = (item.collectionName || "").trim();
-  const count = Number(item.trackCount || 0);
-
-  if (/\s*[-–]\s*Single$/i.test(name) || /\(Single\)$/i.test(name)) {
-    return "single";
-  }
-  if (/\s*[-–]\s*EP$/i.test(name) || /\(EP\)$/i.test(name) || /\bEP$/i.test(name)) {
-    return "ep";
-  }
-  if (count > 0 && count <= 2) {
-    return "single";
-  }
-  if (count >= 3 && count <= 4) {
-    return "ep";
-  }
-  return "lp";
-}
-
-function isLikelyCompilationOrJunk(title) {
-  if (!title) return true;
-  const t = title.toLowerCase().trim();
-  return (
-    t === "(null)" ||
-    t === "undefined" ||
-    /\b(greatest hits|best of|the essentials|anthology|collection|karaoke|tribute to)\b/i.test(t) ||
-    /\s*[-–]\s*single$/i.test(t)
-  );
 }
 
 function renderAvatar(el, avatarUrl, name) {
   if (avatarUrl) {
     el.innerHTML = `<img src="${escapeHtml(avatarUrl)}" alt="${escapeHtml(name || "Avatar")}" />`;
   } else {
-    const initial = (name || "?").trim().charAt(0).toUpperCase();
-    el.textContent = initial || "?";
+    el.textContent = (name || "?").trim().charAt(0).toUpperCase() || "?";
   }
 }
 
@@ -458,13 +309,8 @@ function processAvatarFile(file) {
         const canvas = document.createElement("canvas");
         canvas.width = size;
         canvas.height = size;
-        const ctx = canvas.getContext("2d");
-
-        const minSide = Math.min(img.width, img.height);
-        const sx = (img.width - minSide) / 2;
-        const sy = (img.height - minSide) / 2;
-        ctx.drawImage(img, sx, sy, minSide, minSide, 0, 0, size, size);
-
+        const min = Math.min(img.width, img.height);
+        canvas.getContext("2d").drawImage(img, (img.width - min) / 2, (img.height - min) / 2, min, min, 0, 0, size, size);
         resolve(canvas.toDataURL("image/jpeg", 0.78));
       };
       img.src = reader.result;
@@ -474,73 +320,41 @@ function processAvatarFile(file) {
 }
 
 // ------------------------------------------------------------
-// Last.fm API Client
+// External APIs (Last.fm & iTunes with Zero-Single Filtering)
 // ------------------------------------------------------------
 async function fetchLastFm(method, params = {}) {
-  if (!hasLastFmKey) return null;
-  const qs = new URLSearchParams({
-    method,
-    api_key: LASTFM_API_KEY.trim(),
-    format: "json",
-    ...params
-  });
-
+  if (!LASTFM_API_KEY) return null;
+  const qs = new URLSearchParams({ method, api_key: LASTFM_API_KEY, format: "json", ...params });
   try {
-    const res = await fetch(`https://ws.audioscrobbler.com/2.0/?${qs.toString()}`);
+    const res = await fetch(`https://ws.audioscrobbler.com/2.0/?${qs}`);
     if (!res.ok) return null;
     const data = await res.json();
-    if (data.error) {
-      console.warn("Last.fm API warning:", data.message);
-      return null;
-    }
-    return data;
-  } catch (err) {
-    console.warn("Last.fm fetch error:", err);
+    return data.error ? null : data;
+  } catch {
     return null;
   }
 }
 
-function extractLastFmCover(images = []) {
-  if (!Array.isArray(images)) return "";
-  const preferred =
-    images.find((i) => i.size === "mega") ||
-    images.find((i) => i.size === "extralarge") ||
-    images.find((i) => i.size === "large");
-  const url = preferred?.["#text"] || "";
-  // Ignore Last.fm blank star placeholder
-  if (!url || url.includes("2a96cbd8b46e442fc41c2b86b821562f")) return "";
-  return url;
+async function fetchAlbumPopularity(artist, title) {
+  const data = await fetchLastFm("album.getInfo", { artist, album: title, autocorrect: 1 });
+  return Number(data?.album?.listeners || 0) || 0;
 }
 
-// ------------------------------------------------------------
-// iTunes Search & Lookup API (Fetch + JSONP Fallback)
-// ------------------------------------------------------------
+function extractLastFmCover(images = []) {
+  if (!Array.isArray(images)) return "";
+  const url = (images.find((i) => i.size === "mega") || images.find((i) => i.size === "extralarge") || images.find((i) => i.size === "large"))?.["#text"] || "";
+  return url && !url.includes("2a96cbd8b46e442fc41c2b86b821562f") ? url : "";
+}
+
 function fetchItunesJsonp(url) {
   return new Promise((resolve, reject) => {
-    const callbackName = `itunesCb_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+    const cb = `itunesCb_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
     const script = document.createElement("script");
-    const timeout = setTimeout(() => {
-      cleanup();
-      reject(new Error("iTunes JSONP timeout"));
-    }, 6000);
-
-    function cleanup() {
-      clearTimeout(timeout);
-      delete window[callbackName];
-      script.remove();
-    }
-
-    window[callbackName] = (data) => {
-      cleanup();
-      resolve(data);
-    };
-
-    const sep = url.includes("?") ? "&" : "?";
-    script.src = `${url}${sep}callback=${callbackName}`;
-    script.onerror = () => {
-      cleanup();
-      reject(new Error("iTunes JSONP error"));
-    };
+    const timer = setTimeout(() => { cleanup(); reject(new Error("JSONP timeout")); }, 6000);
+    const cleanup = () => { clearTimeout(timer); delete window[cb]; script.remove(); };
+    window[cb] = (data) => { cleanup(); resolve(data); };
+    script.src = `${url}${url.includes("?") ? "&" : "?"}callback=${cb}`;
+    script.onerror = () => { cleanup(); reject(new Error("JSONP error")); };
     document.body.appendChild(script);
   });
 }
@@ -549,476 +363,345 @@ async function fetchItunesRaw(url) {
   try {
     const res = await fetch(url);
     if (!res.ok) throw new Error("Fetch failed");
-    const data = await res.json();
-    return data.results || [];
+    return (await res.json()).results || [];
   } catch {
-    try {
-      const data = await fetchItunesJsonp(url);
-      return data.results || [];
-    } catch {
-      return [];
-    }
+    try { return (await fetchItunesJsonp(url)).results || []; } catch { return []; }
   }
 }
 
-async function queryItunes(term, entity, limit = 6) {
-  const url = `https://itunes.apple.com/search?term=${encodeURIComponent(term)}&entity=${entity}&limit=${limit}`;
-  return fetchItunesRaw(url);
+const queryItunes = (term, entity, limit = 6) =>
+  fetchItunesRaw(`https://itunes.apple.com/search?term=${encodeURIComponent(term)}&entity=${entity}&limit=${limit}`);
+
+const lookupItunes = (id, entity, limit = 60) =>
+  fetchItunesRaw(`https://itunes.apple.com/lookup?id=${encodeURIComponent(id)}&entity=${entity}&limit=${limit}`);
+
+const toHighResCover = (url) => (url ? url.replace(/100x100bb/i, "800x800bb") : "");
+
+// Single source of truth for album searches across the entire app: zero singles allowed
+async function searchNonSingleAlbums(term, limit = 6) {
+  const raw = await queryItunes(term, "album", Math.min(50, limit * 3));
+  const seen = new Set();
+  const clean = [];
+  for (const item of raw) {
+    if (!isNonSingleRelease(item)) continue;
+    const key = normalizeTitleKey(item.collectionName, item.artistName);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    clean.push(item);
+    if (clean.length >= limit) break;
+  }
+  return clean;
 }
 
-async function lookupItunes(id, entity, limit = 50) {
-  const url = `https://itunes.apple.com/lookup?id=${encodeURIComponent(id)}&entity=${entity}&limit=${limit}`;
-  return fetchItunesRaw(url);
-}
-
-function toHighResCover(artworkUrl100) {
-  if (!artworkUrl100) return "";
-  return artworkUrl100.replace(/100x100bb/i, "800x800bb");
+function toAlbumPayloadFromItunes(item, existingNote = null) {
+  return {
+    album_id: `itunes-${item.collectionId}`,
+    collectionId: item.collectionId,
+    artistId: item.artistId,
+    title: item.collectionName,
+    artist: item.artistName,
+    cover_url: toHighResCover(item.artworkUrl100),
+    release_year: item.releaseDate ? item.releaseDate.slice(0, 4) : "",
+    release_date: item.releaseDate || null,
+    genre: item.primaryGenreName || "",
+    label: item.copyright || "",
+    positive_note: existingNote
+  };
 }
 
 async function resolveAlbumCover(album) {
   if (album.coverUrl) return album.coverUrl;
   if (coverCache[album.id]) return coverCache[album.id];
 
-  const query = album.coverQuery || `${album.artist} ${album.title}`;
-  const results = await queryItunes(query, "album", 3);
-  const match =
-    results.find((r) =>
-      r.collectionName?.toLowerCase().includes(album.title.toLowerCase().slice(0, 8))
-    ) || results[0];
-
+  const results = await searchNonSingleAlbums(album.coverQuery || `${album.artist} ${album.title}`, 3);
+  const match = results.find((r) => r.collectionName.toLowerCase().includes(album.title.toLowerCase().slice(0, 8))) || results[0];
   const highRes = match ? toHighResCover(match.artworkUrl100) : "";
   if (highRes) {
     coverCache[album.id] = highRes;
-    try {
-      localStorage.setItem(COVER_CACHE_KEY, JSON.stringify(coverCache));
-    } catch {
-      // Ignore quota errors
-    }
+    try { localStorage.setItem(COVER_CACHE_KEY, JSON.stringify(coverCache)); } catch { /* ignore */ }
   }
   return highRes;
 }
 
 // ------------------------------------------------------------
-// Date & Dynamic Daily Recommendation Engine (Last.fm + iTunes + Supabase)
+// Daily Recommendation Engine (Strictly Full Albums / Zero Singles)
 // ------------------------------------------------------------
 function getActiveDate() {
-  const date = new Date();
-  date.setDate(date.getDate() + dayOffset);
-  return date;
+  const d = new Date();
+  d.setDate(d.getDate() + dayOffset);
+  return d;
 }
 
-function getDateSeed(date) {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
+function getDateSeed(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-function formatDisplayDate(date) {
-  return date.toLocaleDateString("en-US", {
-    weekday: "short",
-    month: "short",
-    day: "numeric"
-  });
-}
-
-function hashString(str) {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    hash = (hash << 5) - hash + str.charCodeAt(i);
-    hash |= 0;
-  }
-  return Math.abs(hash);
-}
-
-function normalizeTitleKey(title, artist) {
-  return `${(artist || "").toLowerCase().trim()}::${(title || "").toLowerCase().trim()}`;
-}
-
-function normalizeCatalogItem(rawItem) {
-  const positiveReviews = (rawItem.reviews || [])
-    .filter((rev) => rev.sentiment === "positive" && rev.text)
-    .map(({ author, source, text }) => ({ author, source, text }));
-  return { ...rawItem, reviews: positiveReviews };
-}
-
-function getFallbackCatalogRecommendation(profile, date, excludedTitleKeys) {
-  const allAlbums = CATALOG_ITEMS.filter((item) => item.mediaType === "album");
-  const tastes = profile?.tastes || [];
-
-  const freshAlbums = allAlbums.filter(
-    (album) => !excludedTitleKeys.has(normalizeTitleKey(album.title, album.artist))
-  );
-  const candidatePool = freshAlbums.length > 0 ? freshAlbums : allAlbums;
-
-  const matchedPool = candidatePool.filter((album) =>
-    album.tags.some((tag) => tastes.includes(tag))
-  );
-  const pool = matchedPool.length > 0 ? matchedPool : candidatePool;
-
-  const seed = `${profile.user_id}|${getDateSeed(date)}`;
-  const index = hashString(seed) % pool.length;
-  const picked = normalizeCatalogItem(pool[index]);
-  return {
-    ...picked,
-    reason: `Curated for ${profile.display_name}`
-  };
+function formatDisplayDate(d) {
+  return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
 }
 
 function buildExcludedSets(profile, pastPicks, userShelf) {
-  const excludedKeys = new Set();
-  const excludedTitles = new Set();
+  const keys = new Set();
+  const titles = new Set();
+  const add = (title, artist) => {
+    if (!title) return;
+    titles.add(title.toLowerCase().trim());
+    if (artist) keys.add(normalizeTitleKey(title, artist));
+  };
 
-  (profile?.favorite_albums || []).forEach((fav) => {
-    const clean = fav.toLowerCase();
-    excludedTitles.add(clean.split("—")[0].trim());
-  });
-
-  (userShelf || []).forEach((item) => {
-    if (item.listened && item.title) {
-      excludedKeys.add(normalizeTitleKey(item.title, item.artist));
-      excludedTitles.add(item.title.toLowerCase().trim());
-    }
-  });
-
-  (pastPicks || []).forEach((pick) => {
-    excludedKeys.add(normalizeTitleKey(pick.title, pick.artist));
-    excludedTitles.add((pick.title || "").toLowerCase().trim());
-  });
-
-  return { excludedKeys, excludedTitles };
+  (profile?.favorite_albums || []).forEach((fav) => add(fav.split("—")[0]));
+  (profile?.top_five_albums || []).forEach((a) => add(a?.title, a?.artist));
+  (userShelf || []).forEach((i) => i.listened && add(i.title, i.artist));
+  (pastPicks || []).forEach((p) => add(p.title, p.artist));
+  return { keys, titles };
 }
 
 function isExcludedCandidate(title, artist, excluded) {
-  if (isLikelyCompilationOrJunk(title)) return true;
-  const titleLower = (title || "").toLowerCase().trim();
-  if (excluded.excludedTitles.has(titleLower)) return true;
-  if (excluded.excludedKeys.has(normalizeTitleKey(title, artist))) return true;
-  return false;
+  return (
+    isJunkTitle(title) ||
+    excluded.titles.has((title || "").toLowerCase().trim()) ||
+    excluded.keys.has(normalizeTitleKey(title, artist))
+  );
 }
 
-async function generateDynamicDailyPick(profile, dateSeed, excluded) {
-  if (!hasLastFmKey) return null;
-
-  const favArtists = profile?.favorite_artists || [];
-  const tastes = profile?.tastes || [];
-  const dayHash = hashString(`${profile.user_id}|${dateSeed}`);
-
-  // Alternate between artist-similarity (~60% when user has favorite artists) and taste tags
-  const tryArtistFirst = favArtists.length > 0 && dayHash % 5 !== 0;
-
-  let chosen = null; // { title, artist, reason, coverFallback }
-
-  async function tryByFavoriteArtist() {
-    if (!favArtists.length) return null;
-    const seedArtist = favArtists[dayHash % favArtists.length];
-    const simData = await fetchLastFm("artist.getSimilar", {
-      artist: seedArtist,
-      limit: 20,
-      autocorrect: 1
-    });
-
-    const similarArtists = (simData?.similarartists?.artist || []).filter(
-      (a) => a.name && !favArtists.some((f) => f.toLowerCase() === a.name.toLowerCase())
-    );
-
-    if (!similarArtists.length) return null;
-
-    // Try up to 3 similar artists rotated deterministically by dayHash
-    for (let attempt = 0; attempt < Math.min(3, similarArtists.length); attempt++) {
-      const candidateArtist = similarArtists[(dayHash + attempt * 3) % similarArtists.length].name;
-      const topAlbData = await fetchLastFm("artist.getTopAlbums", {
-        artist: candidateArtist,
-        limit: 12,
-        autocorrect: 1
-      });
-
-      const albums = (topAlbData?.topalbums?.album || []).filter(
-        (alb) => alb.name && !isExcludedCandidate(alb.name, candidateArtist, excluded)
-      );
-
-      if (albums.length > 0) {
-        const pickedAlb = albums[(dayHash + attempt) % Math.min(albums.length, 6)];
-        return {
-          title: pickedAlb.name,
-          artist: pickedAlb.artist?.name || candidateArtist,
-          reason: `Because you listen to ${seedArtist}`,
-          coverFallback: extractLastFmCover(pickedAlb.image)
-        };
-      }
-    }
-    return null;
-  }
-
-  async function tryByTasteTag() {
-    const selectedTaste = tastes.length
-      ? tastes[dayHash % tastes.length]
-      : "Ambient & Experimental";
-    const mappedTags = TASTE_TO_LASTFM_TAGS[selectedTaste] || [selectedTaste.toLowerCase()];
-    const chosenTag = mappedTags[dayHash % mappedTags.length];
-    const page = (dayHash % 3) + 1;
-
-    const tagData = await fetchLastFm("tag.getTopAlbums", {
-      tag: chosenTag,
-      limit: 30,
-      page
-    });
-
-    const albums = (tagData?.albums?.album || []).filter((alb) => {
-      const artistName = alb.artist?.name || "";
-      return alb.name && artistName && !isExcludedCandidate(alb.name, artistName, excluded);
-    });
-
-    if (!albums.length) return null;
-
-    const pickedAlb = albums[dayHash % albums.length];
-    return {
-      title: pickedAlb.name,
-      artist: pickedAlb.artist.name,
-      reason: `From your ${selectedTaste} tastes`,
-      coverFallback: extractLastFmCover(pickedAlb.image)
-    };
-  }
-
-  if (tryArtistFirst) {
-    chosen = (await tryByFavoriteArtist()) || (await tryByTasteTag());
-  } else {
-    chosen = (await tryByTasteTag()) || (await tryByFavoriteArtist());
-  }
-
-  if (!chosen) return null;
-
-  // Enrich in parallel: Last.fm album.getInfo (summary + tags) & iTunes Search (official cover + IDs + year)
-  const [infoData, itunesResults] = await Promise.all([
-    fetchLastFm("album.getInfo", {
-      artist: chosen.artist,
-      album: chosen.title,
-      autocorrect: 1
-    }),
-    queryItunes(`${chosen.artist} ${chosen.title}`, "album", 5)
+// Verify a Last.fm candidate against iTunes + Last.fm tracklist to guarantee it is NOT a single
+async function validateAndEnrichCandidate(candidate) {
+  const [infoData, itunesRaw] = await Promise.all([
+    fetchLastFm("album.getInfo", { artist: candidate.artist, album: candidate.title, autocorrect: 1 }),
+    queryItunes(`${candidate.artist} ${candidate.title}`, "album", 8)
   ]);
 
   const lfmInfo = infoData?.album || {};
+  const lfmTracksRaw = lfmInfo.tracks?.track;
+  const lfmTrackCount = Array.isArray(lfmTracksRaw) ? lfmTracksRaw.length : lfmTracksRaw ? 1 : 0;
+
+  const titleNeedle = candidate.title.toLowerCase().slice(0, 10);
+  const artistNeedle = candidate.artist.toLowerCase().slice(0, 8);
+
+  // Strict LP-first matching on iTunes (rejects singles completely)
+  const nonSingles = itunesRaw.filter((r) => {
+    if (!isNonSingleRelease(r)) return false;
+    const sameArtist = r.artistName.toLowerCase().includes(artistNeedle) || artistNeedle.includes(r.artistName.toLowerCase().slice(0, 6));
+    const sameTitle = r.collectionName.toLowerCase().includes(titleNeedle) || titleNeedle.includes(r.collectionName.toLowerCase().slice(0, 8));
+    return sameArtist && sameTitle;
+  });
+
+  const lpMatch = nonSingles.find((r) => classifyRelease(r) === "lp" && Number(r.trackCount || 0) >= 5);
+  const epMatch = nonSingles.find((r) => classifyRelease(r) === "ep" && Number(r.trackCount || 0) >= 4);
+  const itunesMatch = lpMatch || epMatch || null;
+
+  // Reject if iTunes says it's a single OR if neither iTunes nor Last.fm confirms >= 4 tracks
+  const itunesFoundSingleOnly = !itunesMatch && itunesRaw.some(
+    (r) => r.collectionName?.toLowerCase().includes(titleNeedle) && classifyRelease(r) === "single"
+  );
+  if (itunesFoundSingleOnly) return null;
+  if (!itunesMatch && lfmTrackCount < 4) return null;
+
   const lfmTags = (lfmInfo.tags?.tag || [])
     .map((t) => t.name)
-    .filter((name) => name && name.length < 28 && !/^\d{4}$/.test(name))
+    .filter((n) => n && n.length < 28 && !/^\d{4}$/.test(n))
     .slice(0, 4);
-
-  const synopsis = cleanLastFmWiki(lfmInfo.wiki?.summary || lfmInfo.wiki?.content || "");
-
-  // Match best iTunes LP result
-  const lpMatches = itunesResults.filter((r) => classifyRelease(r) !== "single");
-  const titleNeedle = chosen.title.toLowerCase().slice(0, 10);
-  const itunesMatch =
-    lpMatches.find((r) => r.collectionName?.toLowerCase().includes(titleNeedle)) ||
-    lpMatches[0] ||
-    itunesResults[0] ||
-    null;
 
   let runtime = "—";
   let releaseYear = "—";
   let label = "—";
   let genre = lfmTags[0] || "Album";
-  let coverUrl = chosen.coverFallback || extractLastFmCover(lfmInfo.image) || "";
+  let coverUrl = candidate.coverFallback || extractLastFmCover(lfmInfo.image) || "";
   let collectionId = null;
   let artistId = null;
 
   if (itunesMatch) {
-    collectionId = itunesMatch.collectionId ? String(itunesMatch.collectionId) : null;
+    collectionId = String(itunesMatch.collectionId);
     artistId = itunesMatch.artistId ? String(itunesMatch.artistId) : null;
     coverUrl = toHighResCover(itunesMatch.artworkUrl100) || coverUrl;
     releaseYear = itunesMatch.releaseDate ? itunesMatch.releaseDate.slice(0, 4) : "—";
     label = cleanCopyrightToLabel(itunesMatch.copyright);
     if (itunesMatch.primaryGenreName) genre = itunesMatch.primaryGenreName;
 
-    // Fetch exact track runtime once so it's stored permanently in daily_picks
-    if (collectionId) {
-      const tracksRes = await lookupItunes(collectionId, "song", 100);
-      const tracks = tracksRes.filter((r) => r.wrapperType === "track");
-      const totalMs = tracks.reduce((sum, t) => sum + (t.trackTimeMillis || 0), 0);
-      if (totalMs > 0) {
-        runtime = `${Math.round(totalMs / 60000)} min`;
-      } else if (itunesMatch.trackCount) {
-        runtime = `${itunesMatch.trackCount} tracks`;
-      }
-    }
+    const tracks = (await lookupItunes(collectionId, "song", 100)).filter((r) => r.wrapperType === "track");
+    if (tracks.length > 0 && tracks.length <= 2) return null; // Final safety net against mislabeled singles
+    const totalMs = tracks.reduce((sum, t) => sum + (t.trackTimeMillis || 0), 0);
+    runtime = totalMs > 0 ? `${Math.round(totalMs / 60000)} min` : itunesMatch.trackCount ? `${itunesMatch.trackCount} tracks` : "—";
   }
 
   const finalTags = lfmTags.length > 0 ? lfmTags : [genre];
-  const slug = `${chosen.artist}-${chosen.title}`
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "");
-  const albumId = collectionId ? `itunes-${collectionId}` : `lfm-${slug}`;
+  const slug = `${candidate.artist}-${candidate.title}`.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+  const synopsis = cleanLastFmWiki(lfmInfo.wiki?.summary || lfmInfo.wiki?.content || "");
 
   return {
-    album_id: albumId,
-    title: itunesMatch?.collectionName || lfmInfo.name || chosen.title,
-    artist: itunesMatch?.artistName || lfmInfo.artist || chosen.artist,
+    album_id: collectionId ? `itunes-${collectionId}` : `lfm-${slug}`,
+    title: itunesMatch?.collectionName || lfmInfo.name || candidate.title,
+    artist: itunesMatch?.artistName || lfmInfo.artist || candidate.artist,
     cover_url: coverUrl,
     release_year: releaseYear,
     runtime,
     label,
     genre,
     tags: finalTags,
-    synopsis:
-      synopsis ||
-      `Selected for your station ${chosen.reason.toLowerCase()}. Open full details to preview tracks and leave your impression.`,
+    synopsis: synopsis || `Selected for your station ${lowercaseFirst(candidate.reason)}. Open full details to preview tracks and leave your impression.`,
     aesthetic: pickAestheticForTags(finalTags),
-    reason: chosen.reason,
+    reason: candidate.reason,
     itunes_collection_id: collectionId,
     itunes_artist_id: artistId
   };
+}
+
+async function generateDynamicDailyPick(profile, dateSeed, excluded) {
+  const favArtists = profile?.favorite_artists || [];
+  const tastes = profile?.tastes || [];
+  const dayHash = hashString(`${profile.user_id}|${dateSeed}`);
+  const candidates = [];
+
+  async function collectFromSimilarArtists() {
+    if (!favArtists.length) return;
+    const seedArtist = favArtists[dayHash % favArtists.length];
+    const simData = await fetchLastFm("artist.getSimilar", { artist: seedArtist, limit: 20, autocorrect: 1 });
+    const canonicalSeed = simData?.similarartists?.["@attr"]?.artist || seedArtist;
+    const similar = (simData?.similarartists?.artist || []).filter(
+      (a) => a.name && !favArtists.some((f) => f.toLowerCase() === a.name.toLowerCase())
+    );
+
+    for (let i = 0; i < Math.min(3, similar.length); i++) {
+      const artistName = similar[(dayHash + i * 3) % similar.length].name;
+      const topData = await fetchLastFm("artist.getTopAlbums", { artist: artistName, limit: 15, autocorrect: 1 });
+      const valid = (topData?.topalbums?.album || []).filter(
+        (alb) => alb.name && !isExcludedCandidate(alb.name, artistName, excluded)
+      );
+      valid.slice(0, 3).forEach((alb) => {
+        candidates.push({
+          title: alb.name,
+          artist: alb.artist?.name || artistName,
+          reason: `Because you listen to ${canonicalSeed}`,
+          coverFallback: extractLastFmCover(alb.image)
+        });
+      });
+    }
+  }
+
+  async function collectFromTasteTag() {
+    const taste = tastes.length ? tastes[dayHash % tastes.length] : "Indie";
+    const mapped = TASTE_TO_LASTFM_TAGS[taste] || [taste.toLowerCase()];
+    const tag = mapped[dayHash % mapped.length];
+    const tagData = await fetchLastFm("tag.getTopAlbums", { tag, limit: 35, page: (dayHash % 3) + 1 });
+    const valid = (tagData?.albums?.album || []).filter(
+      (alb) => alb.name && alb.artist?.name && !isExcludedCandidate(alb.name, alb.artist.name, excluded)
+    );
+    for (let i = 0; i < Math.min(6, valid.length); i++) {
+      const alb = valid[(dayHash + i * 5) % valid.length];
+      candidates.push({
+        title: alb.name,
+        artist: alb.artist.name,
+        reason: `From your ${taste} tastes`,
+        coverFallback: extractLastFmCover(alb.image)
+      });
+    }
+  }
+
+  if (favArtists.length > 0 && dayHash % 5 !== 0) {
+    await collectFromSimilarArtists();
+    if (candidates.length < 3) await collectFromTasteTag();
+  } else {
+    await collectFromTasteTag();
+    if (candidates.length < 3) await collectFromSimilarArtists();
+  }
+
+  // Test candidates until one passes strict non-single verification
+  for (const cand of candidates.slice(0, 8)) {
+    const verified = await validateAndEnrichCandidate(cand);
+    if (verified) return verified;
+  }
+  return null;
+}
+
+function getFallbackCatalogRecommendation(profile, date, excludedKeys) {
+  const all = CATALOG_ITEMS.filter((i) => i.mediaType === "album");
+  const fresh = all.filter((a) => !excludedKeys.has(normalizeTitleKey(a.title, a.artist)));
+  const base = fresh.length ? fresh : all;
+  const matched = base.filter((a) => a.tags.some((t) => (profile?.tastes || []).includes(t)));
+  const pool = matched.length ? matched : base;
+  const pick = pool[hashString(`${profile.user_id}|${getDateSeed(date)}`) % pool.length];
+  return { ...pick, reason: `Curated for ${profile.display_name}` };
 }
 
 // ------------------------------------------------------------
 // Supabase Data Layer
 // ------------------------------------------------------------
 async function loadUserProfile(userId) {
-  const { data, error } = await sb
-    .from("user_profiles")
-    .select("*")
-    .eq("user_id", userId)
-    .maybeSingle();
-
-  if (error) {
-    console.error("Error loading profile:", error);
-    return null;
-  }
-  return data;
+  const { data } = await sb.from("user_profiles").select("*").eq("user_id", userId).maybeSingle();
+  return data || null;
 }
 
 async function upsertUserProfile(payload) {
   const { data, error } = await sb
     .from("user_profiles")
-    .upsert(
-      {
-        ...payload,
-        updated_at: new Date().toISOString()
-      },
-      { onConflict: "user_id" }
-    )
+    .upsert({ ...payload, updated_at: new Date().toISOString() }, { onConflict: "user_id" })
     .select()
     .single();
-
   if (error) throw error;
   return data;
 }
 
+async function saveProfilePatch(patch) {
+  userProfile = await upsertUserProfile({
+    user_id: sessionUser.id,
+    display_name: userProfile?.display_name || "",
+    bio: userProfile?.bio || "",
+    avatar_url: userProfile?.avatar_url || "",
+    tastes: userProfile?.tastes || [],
+    favorite_artists: userProfile?.favorite_artists || [],
+    favorite_albums: userProfile?.favorite_albums || [],
+    top_five_albums: userProfile?.top_five_albums || [],
+    ...patch
+  });
+  return userProfile;
+}
+
 async function loadDailyPick(userId, pickDate) {
-  try {
-    const { data, error } = await sb
-      .from("daily_picks")
-      .select("*")
-      .eq("user_id", userId)
-      .eq("pick_date", pickDate)
-      .maybeSingle();
-    if (error) return null;
-    return data;
-  } catch {
-    return null;
-  }
+  const { data } = await sb.from("daily_picks").select("*").eq("user_id", userId).eq("pick_date", pickDate).maybeSingle();
+  return data || null;
 }
 
 async function loadPastDailyPicks(userId) {
-  try {
-    const { data, error } = await sb
-      .from("daily_picks")
-      .select("title, artist, pick_date")
-      .eq("user_id", userId)
-      .order("pick_date", { ascending: false })
-      .limit(90);
-    if (error) return [];
-    return data || [];
-  } catch {
-    return [];
-  }
+  const { data } = await sb.from("daily_picks").select("title, artist").eq("user_id", userId).order("pick_date", { ascending: false }).limit(90);
+  return data || [];
 }
 
 async function saveDailyPick(userId, pickDate, pick) {
-  try {
-    const { data, error } = await sb
-      .from("daily_picks")
-      .upsert(
-        {
-          user_id: userId,
-          pick_date: pickDate,
-          album_id: pick.album_id,
-          title: pick.title,
-          artist: pick.artist,
-          cover_url: pick.cover_url || "",
-          release_year: pick.release_year || "",
-          runtime: pick.runtime || "",
-          label: pick.label || "",
-          genre: pick.genre || "",
-          tags: pick.tags || [],
-          synopsis: pick.synopsis || "",
-          aesthetic: pick.aesthetic || "editorial",
-          reason: pick.reason || "",
-          itunes_collection_id: pick.itunes_collection_id || null,
-          itunes_artist_id: pick.itunes_artist_id || null
-        },
-        { onConflict: "user_id,pick_date" }
-      )
-      .select()
-      .single();
-    if (error) {
-      console.warn("Could not store daily pick:", error.message);
-      return pick;
-    }
-    return data;
-  } catch {
-    return pick;
-  }
+  const { data } = await sb
+    .from("daily_picks")
+    .upsert({ user_id: userId, pick_date: pickDate, ...pick }, { onConflict: "user_id,pick_date" })
+    .select()
+    .single();
+  return data || pick;
 }
 
 async function loadInteraction(userId, albumId) {
-  const { data, error } = await sb
-    .from("user_album_interactions")
-    .select("*")
-    .eq("user_id", userId)
-    .eq("album_id", albumId)
-    .maybeSingle();
-
-  if (error) {
-    console.error("Error loading interaction:", error);
-    return { saved: false, listened: false, positive_note: "" };
-  }
-  return data || { saved: false, listened: false, positive_note: "" };
+  const { data } = await sb.from("user_album_interactions").select("*").eq("user_id", userId).eq("album_id", albumId).maybeSingle();
+  return data || emptyInteraction();
 }
 
 async function loadCommunityNotes(albumId) {
-  const { data, error } = await sb
-    .from("user_album_interactions")
-    .select("user_id, positive_note")
-    .eq("album_id", albumId)
-    .not("positive_note", "is", null);
-
-  if (error || !data?.length) return [];
-
-  const nonEmpty = data.filter((row) => row.positive_note && row.positive_note.trim());
+  const { data } = await sb.from("user_album_interactions").select("user_id, positive_note").eq("album_id", albumId).not("positive_note", "is", null);
+  const nonEmpty = (data || []).filter((r) => r.positive_note?.trim());
   if (!nonEmpty.length) return [];
 
-  const userIds = [...new Set(nonEmpty.map((r) => r.user_id))];
-  const { data: profiles } = await sb
-    .from("user_profiles")
-    .select("user_id, display_name")
-    .in("user_id", userIds);
+  const { data: profiles } = await sb.from("user_profiles").select("user_id, display_name").in("user_id", [...new Set(nonEmpty.map((r) => r.user_id))]);
+  const names = Object.fromEntries((profiles || []).map((p) => [p.user_id, p.display_name]));
 
-  const nameMap = {};
-  (profiles || []).forEach((p) => {
-    nameMap[p.user_id] = p.display_name;
-  });
-
-  return nonEmpty.map((row) => ({
-    author: nameMap[row.user_id] || "Listener",
-    source: row.user_id === sessionUser?.id ? "Your Note" : "Station Listener",
-    text: row.positive_note.trim()
+  return nonEmpty.map((r) => ({
+    author: names[r.user_id] || "Listener",
+    source: r.user_id === sessionUser?.id ? "Your Note" : "Station Listener",
+    text: r.positive_note.trim()
   }));
 }
 
 async function upsertAlbumOnShelf(albumData) {
+  const autoTbr = Boolean(albumData.is_tbr) || (Boolean(albumData.saved) && !albumData.listened && isFutureReleaseDate(albumData.release_date));
+  let pop = Number(albumData.popularity || 0);
+  if (!pop && albumData.artist && albumData.title && !autoTbr) {
+    pop = await fetchAlbumPopularity(albumData.artist, albumData.title);
+  }
+
   const { data, error } = await sb
     .from("user_album_interactions")
     .upsert(
@@ -1029,7 +712,10 @@ async function upsertAlbumOnShelf(albumData) {
         artist: albumData.artist || null,
         cover_url: albumData.cover_url || null,
         release_year: albumData.release_year ? String(albumData.release_year) : null,
-        saved: Boolean(albumData.saved),
+        release_date: albumData.release_date || null,
+        is_tbr: autoTbr,
+        popularity: pop,
+        saved: Boolean(albumData.saved) || autoTbr,
         listened: Boolean(albumData.listened),
         positive_note: albumData.positive_note ?? null,
         updated_at: new Date().toISOString()
@@ -1044,279 +730,40 @@ async function upsertAlbumOnShelf(albumData) {
 }
 
 async function deleteAlbumFromShelf(albumId) {
-  const { error } = await sb
-    .from("user_album_interactions")
-    .delete()
-    .eq("user_id", sessionUser.id)
-    .eq("album_id", albumId);
-
+  const { error } = await sb.from("user_album_interactions").delete().eq("user_id", sessionUser.id).eq("album_id", albumId);
   if (error) throw error;
 }
 
 async function loadUserShelf(userId) {
-  const { data, error } = await sb
-    .from("user_album_interactions")
-    .select("*")
-    .eq("user_id", userId)
-    .order("updated_at", { ascending: false });
-
-  if (error) {
-    console.error("Error loading shelf:", error);
-    return [];
-  }
-
+  const { data } = await sb.from("user_album_interactions").select("*").eq("user_id", userId).order("updated_at", { ascending: false });
   return (data || []).map((row) => {
-    if (!row.title) {
-      const cat = CATALOG_ITEMS.find((c) => c.id === row.album_id);
-      if (cat) {
-        return {
-          ...row,
-          title: cat.title,
-          artist: cat.artist,
-          release_year: String(cat.year),
-          cover_url: row.cover_url || coverCache[cat.id] || ""
-        };
-      }
-    }
-    return row;
+    if (row.title) return row;
+    const cat = CATALOG_ITEMS.find((c) => c.id === row.album_id);
+    return cat ? { ...row, title: cat.title, artist: cat.artist, release_year: String(cat.year), cover_url: row.cover_url || coverCache[cat.id] || "" } : row;
   });
 }
 
 async function searchListeners(query = "") {
   let req = sb
     .from("user_profiles")
-    .select("user_id, display_name, bio, avatar_url, tastes, favorite_artists")
+    .select("user_id, display_name, bio, avatar_url, tastes, favorite_artists, top_five_albums")
     .order("updated_at", { ascending: false })
     .limit(24);
-
-  if (query.trim()) {
-    req = req.ilike("display_name", `%${query.trim()}%`);
-  }
-
-  const { data, error } = await req;
-  if (error) {
-    console.error("Error searching listeners:", error);
-    return [];
-  }
+  if (query.trim()) req = req.ilike("display_name", `%${query.trim()}%`);
+  const { data } = await req;
   return data || [];
 }
 
 // ------------------------------------------------------------
-// View Router & History Stack
+// Shared UI Builders (Notes, Album Cards, Listener Cards)
 // ------------------------------------------------------------
-function setActiveNav(view) {
-  stopPreview();
-  currentView = view;
-  const isAuthedWithProfile = Boolean(sessionUser && userProfile?.tastes?.length);
+function renderNotes(listEl, countEl, curated = [], community = []) {
+  const combined = [...(curated || []), ...(community || [])];
+  listEl.innerHTML = "";
+  countEl.textContent = `${combined.length} ${combined.length === 1 ? "note" : "notes"}`;
 
-  mainNav.classList.toggle("hidden", !isAuthedWithProfile);
-  signOutBtn.classList.toggle("hidden", !sessionUser);
-  devDayControls.classList.toggle("hidden", view !== "station" || !isAuthedWithProfile);
-
-  navStation.classList.toggle("active", view === "station");
-  navShelf.classList.toggle("active", view === "shelf");
-  navSearch.classList.toggle("active", view === "search");
-  navListeners.classList.toggle("active", view === "listeners");
-  navProfile.classList.toggle("active", view === "profile");
-
-  authView.classList.toggle("hidden", view !== "auth" && view !== "profile");
-  stationView.classList.toggle("hidden", view !== "station");
-  shelfView.classList.toggle("hidden", view !== "shelf");
-  searchView.classList.toggle("hidden", view !== "search");
-  listenersView.classList.toggle("hidden", view !== "listeners");
-  albumDetailView.classList.toggle("hidden", view !== "album-detail");
-  artistDetailView.classList.toggle("hidden", view !== "artist-detail");
-
-  window.scrollTo(0, 0);
-}
-
-function pushCurrentRouteToHistory() {
-  if (currentRouteState) {
-    viewHistory.push(currentRouteState);
-    if (viewHistory.length > 25) viewHistory.shift();
-  }
-}
-
-function goBack() {
-  const prev = viewHistory.pop();
-  if (!prev) {
-    showStationView(false);
-    return;
-  }
-  switch (prev.type) {
-    case "station":
-      showStationView(false);
-      break;
-    case "shelf":
-      showShelfView(false);
-      break;
-    case "search":
-      showSearchView(prev.query || "", false);
-      break;
-    case "listeners":
-      showListenersView(false);
-      break;
-    case "public-profile":
-      setActiveNav("listeners");
-      currentRouteState = prev;
-      openPublicProfile(prev.profile, false);
-      break;
-    case "album-detail":
-      openAlbumDetail(prev.album, false);
-      break;
-    case "artist-detail":
-      openArtistDetail(prev.artist, false);
-      break;
-    default:
-      showStationView(false);
-  }
-}
-
-// ------------------------------------------------------------
-// Auth & Profile Editor
-// ------------------------------------------------------------
-function renderTasteSelector(selectedTastes = []) {
-  tasteOptionsContainer.innerHTML = "";
-  AVAILABLE_TASTES.forEach((taste) => {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "taste-chip";
-    btn.textContent = taste;
-    if (selectedTastes.includes(taste)) {
-      btn.classList.add("selected");
-    }
-    btn.addEventListener("click", () => btn.classList.toggle("selected"));
-    tasteOptionsContainer.appendChild(btn);
-  });
-}
-
-function renderRemovableChips(container, items, onRemove) {
-  container.innerHTML = "";
-  items.forEach((label) => {
-    const chip = document.createElement("span");
-    chip.className = "removable-chip";
-    chip.innerHTML = `<span>${escapeHtml(label)}</span>`;
-    const removeBtn = document.createElement("button");
-    removeBtn.type = "button";
-    removeBtn.setAttribute("aria-label", `Remove ${label}`);
-    removeBtn.textContent = "×";
-    removeBtn.addEventListener("click", () => onRemove(label));
-    chip.appendChild(removeBtn);
-    container.appendChild(chip);
-  });
-}
-
-function refreshArtistChips() {
-  renderRemovableChips(selectedArtistsContainer, draftArtists, (item) => {
-    draftArtists = draftArtists.filter((a) => a !== item);
-    refreshArtistChips();
-  });
-}
-
-function refreshAlbumChips() {
-  renderRemovableChips(selectedAlbumsContainer, draftAlbums, (item) => {
-    draftAlbums = draftAlbums.filter((a) => a !== item);
-    refreshAlbumChips();
-  });
-}
-
-function updateAvatarPreview() {
-  renderAvatar(avatarPreview, draftAvatarUrl, nameInput.value || userProfile?.display_name || "?");
-  removeAvatarBtn.classList.toggle("hidden", !draftAvatarUrl);
-}
-
-function setAuthMode(mode) {
-  authMode = mode;
-  authFeedback.classList.add("hidden");
-  authFeedback.textContent = "";
-
-  const isEdit = mode === "edit";
-  const isSignup = mode === "signup";
-  const showProfileFields = isSignup || isEdit;
-
-  if (isEdit) {
-    authEyebrow.textContent = "Listener Profile";
-    authHeading.innerHTML = `Edit your <span class="editorial-accent">profile</span>.`;
-    authCopy.textContent = "Update your photo, bio, musical tastes, and favorite references.";
-  } else {
-    authEyebrow.textContent = "Station Access";
-    authHeading.innerHTML = `Tune your daily <span class="editorial-accent">selection</span>.`;
-    authCopy.textContent =
-      "One album a day, matched to what you gravitate toward. No scores, no star ratings—just music and notes from listeners who loved it.";
-  }
-
-  authModeSwitch.classList.toggle("hidden", isEdit);
-  modeSigninBtn.classList.toggle("active", mode === "signin");
-  modeSignupBtn.classList.toggle("active", mode === "signup");
-
-  avatarField.classList.toggle("hidden", !showProfileFields);
-  nameField.classList.toggle("hidden", !showProfileFields);
-  nameInput.required = showProfileFields;
-  bioField.classList.toggle("hidden", !showProfileFields);
-
-  emailField.classList.toggle("hidden", isEdit);
-  emailInput.required = !isEdit;
-
-  passwordField.classList.toggle("hidden", isEdit);
-  passwordInput.required = !isEdit;
-
-  tastesFieldset.classList.toggle("hidden", !showProfileFields);
-  artistsFieldset.classList.toggle("hidden", !showProfileFields);
-  albumsFieldset.classList.toggle("hidden", !showProfileFields);
-  cancelAuthBtn.classList.toggle("hidden", !(isEdit && userProfile?.tastes?.length));
-
-  if (isEdit && userProfile) {
-    nameInput.value = userProfile.display_name || "";
-    bioInput.value = userProfile.bio || "";
-    draftAvatarUrl = userProfile.avatar_url || "";
-    renderTasteSelector(userProfile.tastes || []);
-    draftArtists = [...(userProfile.favorite_artists || [])];
-    draftAlbums = [...(userProfile.favorite_albums || [])];
-    refreshArtistChips();
-    refreshAlbumChips();
-    updateAvatarPreview();
-    authSubmitBtn.textContent = "Save profile";
-  } else if (isSignup) {
-    nameInput.value = "";
-    bioInput.value = "";
-    draftAvatarUrl = "";
-    renderTasteSelector([]);
-    draftArtists = [];
-    draftAlbums = [];
-    refreshArtistChips();
-    refreshAlbumChips();
-    updateAvatarPreview();
-    authSubmitBtn.textContent = "Create account";
-  } else {
-    authSubmitBtn.textContent = "Sign in";
-  }
-}
-
-function showAuthView(mode = "signin") {
-  viewHistory = [];
-  currentRouteState = { type: mode === "edit" ? "profile" : "auth" };
-  setActiveNav(mode === "edit" ? "profile" : "auth");
-  setAuthMode(mode);
-}
-
-// ------------------------------------------------------------
-// Station View (Dynamic Daily Recommendation)
-// ------------------------------------------------------------
-function renderStationInteractionButtons() {
-  wantBtn.classList.toggle("selected", Boolean(currentInteraction.saved));
-  listenedBtn.classList.toggle("selected", Boolean(currentInteraction.listened));
-  personalNoteInput.value = currentInteraction.positive_note || "";
-}
-
-function renderStationReviews(curatedNotes = [], communityNotes = []) {
-  const combined = [...(curatedNotes || []), ...(communityNotes || [])];
-  const reviewsList = document.getElementById("reviews-list");
-  reviewsList.innerHTML = "";
-  document.getElementById("review-source-note").textContent =
-    `${combined.length} listener ${combined.length === 1 ? "note" : "notes"}`;
-
-  if (combined.length === 0) {
-    reviewsList.innerHTML = `<p class="meta-label">No listener notes on this album yet. Be the first to share what stood out.</p>`;
+  if (!combined.length) {
+    listEl.innerHTML = `<p class="meta-label">No listener notes yet—leave the first impression below.</p>`;
     return;
   }
 
@@ -1327,16 +774,348 @@ function renderStationReviews(curatedNotes = [], communityNotes = []) {
       <p class="review-quote">“${escapeHtml(rev.text)}”</p>
       <footer class="review-author">— ${escapeHtml(rev.author)} (${escapeHtml(rev.source)})</footer>
     `;
-    reviewsList.appendChild(card);
+    listEl.appendChild(card);
   });
+}
+
+function createAlbumCard(item, { mode = "artist", existing = null, onShelfChanged = null } = {}) {
+  const isTbr = isItemTbr(item);
+  const isFuture = isFutureReleaseDate(item.release_date);
+  const noteText = item.positive_note ? escapeHtml(item.positive_note) : "";
+  const payload = {
+    album_id: item.album_id,
+    collectionId: item.collectionId || null,
+    artistId: item.artistId || null,
+    title: item.title || item.album_id,
+    artist: item.artist || "Unknown artist",
+    cover_url: item.cover_url || "",
+    release_year: item.release_year || "",
+    release_date: item.release_date || null,
+    genre: item.genre || "",
+    label: item.label || ""
+  };
+
+  const subtitleHtml =
+    mode === "artist"
+      ? `<span class="meta-label">${escapeHtml(payload.release_year || "Release")}${item.trackCount ? ` · ${item.trackCount} tracks` : ""}</span>`
+      : `<button class="shelf-card-artist js-open-artist" type="button">${escapeHtml(payload.artist)}${payload.release_year && !isTbr ? ` · ${escapeHtml(payload.release_year)}` : ""}</button>`;
+
+  const tbrTagHtml =
+    (mode === "shelf" || mode === "public") && isTbr
+      ? `<span class="tbr-date-tag">TBR · ${escapeHtml(formatShortReleaseDate(item.release_date))}</span>`
+      : "";
+
+  const noteHtml = (mode === "shelf" || mode === "public") && noteText ? `<p class="shelf-card-note">“${noteText}”</p>` : "";
+
+  let actionsHtml = "";
+  if (mode === "shelf") {
+    actionsHtml = `
+      <div class="shelf-card-actions">
+        <button class="text-btn js-switch-shelf" type="button">${item.listened ? "Move to Want" : "Mark Listened"}</button>
+        <button class="text-btn js-edit-note" type="button">${noteText ? "Edit note" : "Add note"}</button>
+        <button class="text-btn js-remove-shelf" type="button">Remove</button>
+      </div>
+      <div class="shelf-note-editor hidden">
+        <textarea rows="2" placeholder="Write your note (no scores)...">${noteText}</textarea>
+        <div class="note-actions">
+          <button class="text-btn js-save-note" type="button">Save</button>
+          <button class="text-btn js-cancel-note" type="button">Cancel</button>
+        </div>
+      </div>`;
+  } else if (mode === "search") {
+    const onWant = existing?.saved && !existing?.listened;
+    const onListened = existing?.listened;
+    actionsHtml = `
+      <div class="search-quick-actions">
+        <button class="mini-btn js-want ${onWant ? "active" : ""}" type="button">${onWant ? (isFuture ? "On TBR" : "On Want") : isFuture ? "+ TBR" : "+ Want"}</button>
+        <button class="mini-btn js-listened ${onListened ? "active" : ""}" type="button">${onListened ? "Listened" : "+ Listened"}</button>
+      </div>`;
+  }
+
+  const card = document.createElement("article");
+  card.className = "shelf-card";
+  card.innerHTML = `
+    <button class="shelf-cover js-open-album" type="button" aria-label="Open ${escapeHtml(payload.title)}">
+      ${payload.cover_url ? `<img src="${escapeHtml(payload.cover_url)}" alt="${escapeHtml(payload.title)}" loading="lazy" />` : VINYL_PLACEHOLDER_SVG}
+    </button>
+    <div class="shelf-card-meta">
+      <button class="shelf-card-title js-open-album" type="button">${escapeHtml(payload.title)}</button>
+      ${subtitleHtml}
+      ${tbrTagHtml}
+    </div>
+    ${noteHtml}
+    ${actionsHtml}
+  `;
+
+  card.querySelectorAll(".js-open-album").forEach((el) => el.addEventListener("click", () => openAlbumDetail(payload)));
+  card.querySelector(".js-open-artist")?.addEventListener("click", () => openArtistDetail({ artistId: payload.artistId, name: payload.artist }));
+
+  if (mode === "shelf") {
+    card.querySelector(".js-switch-shelf").addEventListener("click", async () => {
+      const nextListened = !item.listened;
+      await upsertAlbumOnShelf({ ...item, listened: nextListened, saved: !nextListened, is_tbr: false });
+      onShelfChanged?.();
+    });
+    card.querySelector(".js-remove-shelf").addEventListener("click", async () => {
+      await deleteAlbumFromShelf(item.album_id);
+      onShelfChanged?.(item.album_id);
+    });
+    const editor = card.querySelector(".shelf-note-editor");
+    const ta = editor.querySelector("textarea");
+    card.querySelector(".js-edit-note").addEventListener("click", () => {
+      editor.classList.toggle("hidden");
+      if (!editor.classList.contains("hidden")) ta.focus();
+    });
+    card.querySelector(".js-cancel-note").addEventListener("click", () => editor.classList.add("hidden"));
+    card.querySelector(".js-save-note").addEventListener("click", async () => {
+      await upsertAlbumOnShelf({ ...item, positive_note: ta.value.trim() || null });
+      onShelfChanged?.();
+    });
+  } else if (mode === "search") {
+    const wantEl = card.querySelector(".js-want");
+    const listenedEl = card.querySelector(".js-listened");
+    wantEl.addEventListener("click", async () => {
+      await upsertAlbumOnShelf({ ...payload, saved: true, listened: false, is_tbr: isFuture });
+      wantEl.classList.add("active");
+      wantEl.textContent = isFuture ? "On TBR" : "On Want";
+      listenedEl.classList.remove("active");
+      listenedEl.textContent = "+ Listened";
+    });
+    listenedEl.addEventListener("click", async () => {
+      await upsertAlbumOnShelf({ ...payload, saved: false, listened: true, is_tbr: false });
+      listenedEl.classList.add("active");
+      listenedEl.textContent = "Listened";
+      wantEl.classList.remove("active");
+      wantEl.textContent = isFuture ? "+ TBR" : "+ Want";
+    });
+  }
+
+  return card;
+}
+
+function createListenerCard(profile) {
+  const card = document.createElement("button");
+  card.type = "button";
+  card.className = "listener-card";
+
+  const avatarEl = document.createElement("div");
+  avatarEl.className = "avatar-circle avatar-md";
+  renderAvatar(avatarEl, profile.avatar_url, profile.display_name);
+
+  const tastesSummary = (profile.tastes || []).slice(0, 3).join(" · ");
+  const infoEl = document.createElement("div");
+  infoEl.className = "listener-card-info";
+  infoEl.innerHTML = `
+    <span class="listener-card-name">${escapeHtml(profile.display_name)}${profile.user_id === sessionUser?.id ? " (You)" : ""}</span>
+    ${profile.bio ? `<span class="listener-card-bio">${escapeHtml(profile.bio)}</span>` : ""}
+    ${tastesSummary ? `<span class="listener-card-tastes">${escapeHtml(tastesSummary)}</span>` : ""}
+  `;
+
+  card.append(avatarEl, infoEl);
+  card.addEventListener("click", () => {
+    if (currentView !== "listeners") {
+      pushRoute();
+      setActiveNav("listeners");
+    }
+    openPublicProfile(profile, false);
+  });
+  return card;
+}
+
+// ------------------------------------------------------------
+// View Router & History Stack
+// ------------------------------------------------------------
+const VIEW_IDS = {
+  station: "station-view",
+  shelf: "shelf-view",
+  search: "search-view",
+  listeners: "listeners-view",
+  "album-detail": "album-detail-view",
+  "artist-detail": "artist-detail-view"
+};
+
+function setActiveNav(view) {
+  stopPreview();
+  currentView = view;
+  const ready = Boolean(sessionUser && userProfile?.tastes?.length);
+
+  $("main-nav").classList.toggle("hidden", !ready);
+  $("sign-out-btn").classList.toggle("hidden", !sessionUser);
+  $("dev-day-controls").classList.toggle("hidden", view !== "station" || !ready);
+
+  ["station", "shelf", "search", "listeners", "profile"].forEach((k) => {
+    $(`nav-${k}`).classList.toggle("active", view === k);
+  });
+
+  $("auth-view").classList.toggle("hidden", view !== "auth" && view !== "profile");
+  Object.entries(VIEW_IDS).forEach(([k, id]) => $(id).classList.toggle("hidden", view !== k));
+  window.scrollTo(0, 0);
+}
+
+function pushRoute() {
+  if (currentRoute) {
+    viewHistory.push(currentRoute);
+    if (viewHistory.length > 25) viewHistory.shift();
+  }
+}
+
+function goBack() {
+  const prev = viewHistory.pop();
+  if (!prev) return showStationView(false);
+  const handlers = {
+    station: () => showStationView(false),
+    shelf: () => showShelfView(false),
+    search: () => showSearchView(prev.query || "", false),
+    listeners: () => showListenersView(false),
+    "public-profile": () => { setActiveNav("listeners"); currentRoute = prev; openPublicProfile(prev.profile, false); },
+    "album-detail": () => openAlbumDetail(prev.album, false),
+    "artist-detail": () => openArtistDetail(prev.artist, false)
+  };
+  (handlers[prev.type] || handlers.station)();
+}
+
+// ------------------------------------------------------------
+// Auth, Profile Editor & Top 5 Favorite Albums
+// ------------------------------------------------------------
+function renderTasteSelector(selected = []) {
+  const container = $("taste-options");
+  container.innerHTML = "";
+  AVAILABLE_TASTES.forEach((taste) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = `taste-chip${selected.includes(taste) ? " selected" : ""}`;
+    btn.textContent = taste;
+    btn.addEventListener("click", () => btn.classList.toggle("selected"));
+    container.appendChild(btn);
+  });
+}
+
+function refreshArtistChips() {
+  const container = $("selected-artists");
+  container.innerHTML = "";
+  draftArtists.forEach((label) => {
+    const chip = document.createElement("span");
+    chip.className = "removable-chip";
+    chip.innerHTML = `<span>${escapeHtml(label)}</span><button type="button" aria-label="Remove ${escapeHtml(label)}">×</button>`;
+    chip.querySelector("button").addEventListener("click", () => {
+      draftArtists = draftArtists.filter((a) => a !== label);
+      refreshArtistChips();
+    });
+    container.appendChild(chip);
+  });
+}
+
+function renderTopFiveEditor() {
+  $("top-five-count").textContent = `${draftTopFive.length}/5`;
+  const input = $("album-search-input");
+  input.disabled = draftTopFive.length >= 5;
+  input.placeholder = draftTopFive.length >= 5 ? "Top 5 full — remove one below to replace" : "Search an album to add to your Top 5...";
+
+  const grid = $("top-five-editor-grid");
+  grid.innerHTML = "";
+  for (let i = 0; i < 5; i++) {
+    const alb = draftTopFive[i];
+    const slot = document.createElement("div");
+    slot.className = "top-five-slot";
+    if (alb) {
+      slot.innerHTML = `
+        <div class="top-five-cover">${alb.cover_url ? `<img src="${escapeHtml(alb.cover_url)}" alt="${escapeHtml(alb.title)}" />` : VINYL_PLACEHOLDER_SVG}</div>
+        <button class="top-five-remove" type="button" aria-label="Remove ${escapeHtml(alb.title)}">×</button>
+        <span class="top-five-title">${escapeHtml(alb.title)}</span>
+        <span class="top-five-artist">${escapeHtml(alb.artist)}</span>
+      `;
+      slot.querySelector(".top-five-remove").addEventListener("click", () => {
+        draftTopFive.splice(i, 1);
+        renderTopFiveEditor();
+      });
+    } else {
+      slot.innerHTML = `<div class="top-five-cover empty">${VINYL_PLACEHOLDER_SVG}</div><span class="top-five-artist">#${i + 1}</span>`;
+    }
+    grid.appendChild(slot);
+  }
+}
+
+function updateAvatarPreview() {
+  renderAvatar($("avatar-preview"), draftAvatarUrl, $("name-input").value || userProfile?.display_name || "?");
+  $("remove-avatar-btn").classList.toggle("hidden", !draftAvatarUrl);
+}
+
+function setAuthMode(mode) {
+  authMode = mode;
+  $("auth-feedback").classList.add("hidden");
+
+  const isEdit = mode === "edit";
+  const showProfile = mode === "signup" || isEdit;
+
+  $("auth-eyebrow").textContent = isEdit ? "Listener Profile" : "Station Access";
+  $("auth-heading").innerHTML = isEdit
+    ? `Edit your <span class="editorial-accent">profile</span>.`
+    : `Tune your daily <span class="editorial-accent">selection</span>.`;
+  $("auth-copy").textContent = isEdit
+    ? "Update your photo, bio, genres, favorite artists, and Top 5 albums."
+    : "One album a day, matched to what you gravitate toward. No scores, no star ratings—just music and notes from listeners.";
+
+  $("auth-mode-switch").classList.toggle("hidden", isEdit);
+  $("mode-signin").classList.toggle("active", mode === "signin");
+  $("mode-signup").classList.toggle("active", mode === "signup");
+
+  ["avatar-field", "name-field", "bio-field", "tastes-fieldset", "artists-fieldset", "albums-fieldset"].forEach((id) =>
+    $(id).classList.toggle("hidden", !showProfile)
+  );
+  ["email-field", "password-field"].forEach((id) => $(id).classList.toggle("hidden", isEdit));
+
+  $("name-input").required = showProfile;
+  $("email-input").required = !isEdit;
+  $("password-input").required = !isEdit;
+  $("cancel-auth-btn").classList.toggle("hidden", !(isEdit && userProfile?.tastes?.length));
+
+  if (isEdit && userProfile) {
+    $("name-input").value = userProfile.display_name || "";
+    $("bio-input").value = userProfile.bio || "";
+    draftAvatarUrl = userProfile.avatar_url || "";
+    renderTasteSelector(userProfile.tastes || []);
+    draftArtists = [...(userProfile.favorite_artists || [])];
+    draftTopFive = Array.isArray(userProfile.top_five_albums) ? userProfile.top_five_albums.slice(0, 5) : [];
+    refreshArtistChips();
+    renderTopFiveEditor();
+    updateAvatarPreview();
+    $("auth-submit-btn").textContent = "Save profile";
+  } else if (mode === "signup") {
+    $("name-input").value = "";
+    $("bio-input").value = "";
+    draftAvatarUrl = "";
+    draftArtists = [];
+    draftTopFive = [];
+    renderTasteSelector([]);
+    refreshArtistChips();
+    renderTopFiveEditor();
+    updateAvatarPreview();
+    $("auth-submit-btn").textContent = "Create account";
+  } else {
+    $("auth-submit-btn").textContent = "Sign in";
+  }
+}
+
+function showAuthView(mode = "signin") {
+  viewHistory = [];
+  currentRoute = { type: mode === "edit" ? "profile" : "auth" };
+  setActiveNav(mode === "edit" ? "profile" : "auth");
+  setAuthMode(mode);
+}
+
+// ------------------------------------------------------------
+// Station View (Daily Recommendation)
+// ------------------------------------------------------------
+function renderStationButtons() {
+  $("want-btn").classList.toggle("selected", Boolean(currentInteraction.saved && !currentInteraction.listened));
+  $("listened-btn").classList.toggle("selected", Boolean(currentInteraction.listened));
+  $("personal-note-input").value = currentInteraction.positive_note || "";
 }
 
 async function saveStationInteraction(patch) {
   if (!sessionUser || !currentAlbum) return;
-
   currentInteraction = { ...currentInteraction, ...patch };
-  renderStationInteractionButtons();
-
+  renderStationButtons();
   try {
     await upsertAlbumOnShelf({
       album_id: currentAlbum.id,
@@ -1346,177 +1125,125 @@ async function saveStationInteraction(patch) {
       release_year: currentAlbum.year,
       saved: currentInteraction.saved,
       listened: currentInteraction.listened,
+      is_tbr: false,
       positive_note: currentInteraction.positive_note || null
     });
-  } catch (err) {
-    console.error("Error saving interaction:", err);
-    noteStatus.textContent = "Could not save";
+  } catch {
+    $("note-status").textContent = "Could not save";
   }
 }
 
-async function showStationView(clearHistory = true) {
-  if (!sessionUser) {
-    showAuthView("signin");
-    return;
-  }
-  if (!userProfile || !userProfile.tastes?.length) {
-    showAuthView("edit");
-    return;
-  }
+function mapStoredPickToAlbum(p) {
+  return {
+    id: p.album_id,
+    mediaType: "album",
+    title: p.title,
+    artist: p.artist,
+    year: p.release_year || "—",
+    runtime: p.runtime || "—",
+    label: p.label || "—",
+    genre: p.genre || "",
+    tags: p.tags || [],
+    synopsis: p.synopsis || "",
+    aesthetic: p.aesthetic || "editorial",
+    reason: p.reason || `Curated for ${userProfile.display_name}`,
+    coverUrl: p.cover_url || "",
+    collectionId: p.itunes_collection_id || null,
+    artistId: p.itunes_artist_id || null,
+    reviews: []
+  };
+}
 
-  const reqId = ++stationRequestId;
+async function showStationView(clearHistory = true) {
+  if (!sessionUser) return showAuthView("signin");
+  if (!userProfile?.tastes?.length) return showAuthView("edit");
+
+  const reqId = ++stationReqId;
   if (clearHistory) viewHistory = [];
-  currentRouteState = { type: "station" };
+  currentRoute = { type: "station" };
   setActiveNav("station");
 
   const activeDate = getActiveDate();
   const dateSeed = getDateSeed(activeDate);
-  currentDateLabel.textContent = formatDisplayDate(activeDate);
+  $("current-date-label").textContent = formatDisplayDate(activeDate);
 
-  // Subtle loading state while checking Supabase or tuning a fresh dynamic pick
-  const coverEl = document.getElementById("album-cover");
+  const coverEl = $("album-cover");
   coverEl.classList.add("loading");
-  stationArtistBtn.textContent = "";
-  stationTitleEl.textContent = "Tuning transmission…";
-  document.getElementById("album-synopsis").textContent = "";
-  document.getElementById("album-tags").innerHTML = "";
-  document.getElementById("reviews-list").innerHTML = "";
-  document.getElementById("listener-greeting").textContent = `Curating for ${userProfile.display_name}`;
+  $("album-artist").textContent = "";
+  $("album-title").textContent = "Tuning transmission…";
+  $("album-synopsis").textContent = "";
+  $("album-tags").innerHTML = "";
+  $("reviews-list").innerHTML = "";
+  $("listener-greeting").textContent = `Curating for ${userProfile.display_name}`;
 
-  // 1. Check if today's pick is already stored in Supabase daily_picks
   let storedPick = await loadDailyPick(sessionUser.id, dateSeed);
-  if (reqId !== stationRequestId) return;
+  if (reqId !== stationReqId) return;
 
   let resolvedAlbum = null;
-
   if (storedPick) {
-    resolvedAlbum = {
-      id: storedPick.album_id,
-      mediaType: "album",
-      title: storedPick.title,
-      artist: storedPick.artist,
-      year: storedPick.release_year || "—",
-      runtime: storedPick.runtime || "—",
-      label: storedPick.label || "—",
-      genre: storedPick.genre || "",
-      tags: storedPick.tags || [],
-      synopsis: storedPick.synopsis || "",
-      aesthetic: storedPick.aesthetic || "editorial",
-      reason: storedPick.reason || `Curated for ${userProfile.display_name}`,
-      coverUrl: storedPick.cover_url || "",
-      collectionId: storedPick.itunes_collection_id || null,
-      artistId: storedPick.itunes_artist_id || null,
-      reviews: []
-    };
+    resolvedAlbum = mapStoredPickToAlbum(storedPick);
   } else {
-    // 2. Build exclusion list from listened shelf + past daily picks + favorite albums
-    const [pastPicks, myShelf] = await Promise.all([
-      loadPastDailyPicks(sessionUser.id),
-      loadUserShelf(sessionUser.id)
-    ]);
-    if (reqId !== stationRequestId) return;
+    const [pastPicks, myShelf] = await Promise.all([loadPastDailyPicks(sessionUser.id), loadUserShelf(sessionUser.id)]);
+    if (reqId !== stationReqId) return;
 
     const excluded = buildExcludedSets(userProfile, pastPicks, myShelf);
-
-    // 3. Try dynamic recommendation via Last.fm + iTunes
     const dynamicPick = await generateDynamicDailyPick(userProfile, dateSeed, excluded);
-    if (reqId !== stationRequestId) return;
+    if (reqId !== stationReqId) return;
 
-    if (dynamicPick) {
-      const savedPick = await saveDailyPick(sessionUser.id, dateSeed, dynamicPick);
-      if (reqId !== stationRequestId) return;
-
-      resolvedAlbum = {
-        id: savedPick.album_id,
-        mediaType: "album",
-        title: savedPick.title,
-        artist: savedPick.artist,
-        year: savedPick.release_year || "—",
-        runtime: savedPick.runtime || "—",
-        label: savedPick.label || "—",
-        genre: savedPick.genre || "",
-        tags: savedPick.tags || [],
-        synopsis: savedPick.synopsis || "",
-        aesthetic: savedPick.aesthetic || "editorial",
-        reason: savedPick.reason || `Curated for ${userProfile.display_name}`,
-        coverUrl: savedPick.cover_url || "",
-        collectionId: savedPick.itunes_collection_id || null,
-        artistId: savedPick.itunes_artist_id || null,
-        reviews: []
-      };
-    } else {
-      // 4. Graceful fallback to local catalog if Last.fm key is not configured or unreachable
-      resolvedAlbum = getFallbackCatalogRecommendation(
-        userProfile,
-        activeDate,
-        excluded.excludedKeys
-      );
-    }
+    resolvedAlbum = dynamicPick
+      ? mapStoredPickToAlbum(await saveDailyPick(sessionUser.id, dateSeed, dynamicPick))
+      : getFallbackCatalogRecommendation(userProfile, activeDate, excluded.keys);
+    if (reqId !== stationReqId) return;
   }
 
   currentAlbum = resolvedAlbum;
-
-  // Load user's shelf interaction & real community notes for this album
   const [interaction, communityNotes] = await Promise.all([
     loadInteraction(sessionUser.id, currentAlbum.id),
     loadCommunityNotes(currentAlbum.id)
   ]);
-  if (reqId !== stationRequestId) return;
+  if (reqId !== stationReqId) return;
 
   currentInteraction = interaction;
-
-  document.getElementById("listener-greeting").textContent = currentAlbum.reason;
-  stationView.dataset.aesthetic = currentAlbum.aesthetic || "editorial";
+  $("listener-greeting").textContent = currentAlbum.reason;
+  $("station-view").dataset.aesthetic = currentAlbum.aesthetic || "editorial";
 
   coverEl.alt = `${currentAlbum.title} by ${currentAlbum.artist}`;
-  const albumIdForRender = currentAlbum.id;
   currentAlbumCoverUrl = currentAlbum.coverUrl || coverCache[currentAlbum.id] || "";
-
   if (currentAlbumCoverUrl) {
     coverEl.src = currentAlbumCoverUrl;
     coverEl.onload = () => coverEl.classList.remove("loading");
     if (coverEl.complete) coverEl.classList.remove("loading");
   } else {
+    const idSnap = currentAlbum.id;
     resolveAlbumCover(currentAlbum).then((url) => {
-      if (currentAlbum?.id === albumIdForRender && url) {
+      if (currentAlbum?.id === idSnap && url) {
         currentAlbumCoverUrl = url;
         coverEl.src = url;
-        coverEl.onload = () => coverEl.classList.remove("loading");
-      } else {
-        coverEl.classList.remove("loading");
       }
+      coverEl.classList.remove("loading");
     });
   }
 
-  document.getElementById("media-type-badge").textContent = currentAlbum.mediaType || "Album";
-  document.getElementById("album-year").textContent = currentAlbum.year || "—";
-  document.getElementById("album-runtime").textContent = currentAlbum.runtime || "—";
-  document.getElementById("album-label").textContent = currentAlbum.label || "—";
-  stationArtistBtn.textContent = currentAlbum.artist;
-  stationTitleEl.textContent = currentAlbum.title;
-  document.getElementById("album-synopsis").textContent = currentAlbum.synopsis || "";
+  $("media-type-badge").textContent = currentAlbum.mediaType || "Album";
+  $("album-year").textContent = currentAlbum.year || "—";
+  $("album-runtime").textContent = currentAlbum.runtime || "—";
+  $("album-label").textContent = currentAlbum.label || "—";
+  $("album-artist").textContent = currentAlbum.artist;
+  $("album-title").textContent = currentAlbum.title;
+  $("album-synopsis").textContent = currentAlbum.synopsis || "";
 
-  const tagsContainer = document.getElementById("album-tags");
-  tagsContainer.innerHTML = "";
-  (currentAlbum.tags || []).forEach((tag) => {
-    const span = document.createElement("span");
-    span.className = "tag-pill";
-    span.textContent = tag;
-    tagsContainer.appendChild(span);
-  });
-
-  renderStationReviews(currentAlbum.reviews, communityNotes);
-
-  noteStatus.textContent = "";
-  renderStationInteractionButtons();
+  $("album-tags").innerHTML = (currentAlbum.tags || []).map((t) => `<span class="tag-pill">${escapeHtml(t)}</span>`).join("");
+  renderNotes($("reviews-list"), $("review-source-note"), currentAlbum.reviews, communityNotes);
+  $("note-status").textContent = "";
+  renderStationButtons();
 }
 
-function openCurrentStationAlbumDetail() {
+function openStationAlbumDetail() {
   if (!currentAlbum) return;
   openAlbumDetail({
     album_id: currentAlbum.id,
-    collectionId: currentAlbum.collectionId || null,
-    artistId: currentAlbum.artistId || null,
+    collectionId: currentAlbum.collectionId,
+    artistId: currentAlbum.artistId,
     title: currentAlbum.title,
     artist: currentAlbum.artist,
     cover_url: currentAlbumCoverUrl || currentAlbum.coverUrl || coverCache[currentAlbum.id] || "",
@@ -1533,527 +1260,349 @@ function openCurrentStationAlbumDetail() {
 // ------------------------------------------------------------
 // Album Detail Page
 // ------------------------------------------------------------
-function renderDetailInteractionState() {
-  detailWantBtn.classList.toggle("selected", Boolean(activeDetailInteraction.saved));
-  detailListenedBtn.classList.toggle("selected", Boolean(activeDetailInteraction.listened));
-  detailNoteInput.value = activeDetailInteraction.positive_note || "";
+function renderDetailButtons() {
+  const tbr = isItemTbr(activeDetailInteraction);
+  $("detail-want-btn").classList.toggle("selected", Boolean(activeDetailInteraction.saved && !activeDetailInteraction.listened && !tbr));
+  $("detail-tbr-btn").classList.toggle("selected", tbr);
+  $("detail-listened-btn").classList.toggle("selected", Boolean(activeDetailInteraction.listened));
+  $("detail-note-input").value = activeDetailInteraction.positive_note || "";
 }
 
 async function saveDetailInteraction(patch) {
   if (!sessionUser || !activeDetailAlbum) return;
-
   activeDetailInteraction = { ...activeDetailInteraction, ...patch };
-  renderDetailInteractionState();
-
+  renderDetailButtons();
   try {
     await upsertAlbumOnShelf({
-      album_id: activeDetailAlbum.album_id,
-      title: activeDetailAlbum.title,
-      artist: activeDetailAlbum.artist,
-      cover_url: activeDetailAlbum.cover_url || "",
-      release_year: activeDetailAlbum.release_year || "",
+      ...activeDetailAlbum,
       saved: activeDetailInteraction.saved,
       listened: activeDetailInteraction.listened,
+      is_tbr: activeDetailInteraction.is_tbr,
       positive_note: activeDetailInteraction.positive_note || null
     });
-  } catch (err) {
-    console.error("Error saving album detail interaction:", err);
-    detailNoteStatus.textContent = "Could not save";
+  } catch {
+    $("detail-note-status").textContent = "Could not save";
   }
 }
 
-async function openAlbumDetail(albumInput, pushHistory = true) {
+async function openAlbumDetail(input, push = true) {
   if (!sessionUser) return showAuthView("signin");
-  if (pushHistory) pushCurrentRouteToHistory();
+  if (push) pushRoute();
 
-  const reqId = ++detailRequestId;
-  const catalogMatch = CATALOG_ITEMS.find((c) => c.id === albumInput.album_id);
+  const reqId = ++detailReqId;
+  const cat = CATALOG_ITEMS.find((c) => c.id === input.album_id);
 
   activeDetailAlbum = {
-    album_id: albumInput.album_id,
-    collectionId:
-      albumInput.collectionId ||
-      (albumInput.album_id?.startsWith("itunes-") ? albumInput.album_id.replace("itunes-", "") : null),
-    artistId: albumInput.artistId || null,
-    title: albumInput.title || catalogMatch?.title || "Untitled Album",
-    artist: albumInput.artist || catalogMatch?.artist || "Unknown Artist",
-    cover_url: albumInput.cover_url || coverCache[albumInput.album_id] || "",
-    release_year: albumInput.release_year || (catalogMatch ? String(catalogMatch.year) : ""),
-    runtime: albumInput.runtime || catalogMatch?.runtime || "",
-    genre: albumInput.genre || catalogMatch?.tags?.[0] || "",
-    label: albumInput.label || catalogMatch?.label || "",
-    synopsis: albumInput.synopsis || catalogMatch?.synopsis || "",
-    reviews: albumInput.reviews || catalogMatch?.reviews || [],
-    coverQuery: albumInput.coverQuery || catalogMatch?.coverQuery || ""
+    album_id: input.album_id,
+    collectionId: input.collectionId || (input.album_id?.startsWith("itunes-") ? input.album_id.replace("itunes-", "") : null),
+    artistId: input.artistId || null,
+    title: input.title || cat?.title || "Untitled Album",
+    artist: input.artist || cat?.artist || "Unknown Artist",
+    cover_url: input.cover_url || coverCache[input.album_id] || "",
+    release_year: input.release_year || (cat ? String(cat.year) : ""),
+    release_date: input.release_date || null,
+    runtime: input.runtime || cat?.runtime || "",
+    genre: input.genre || cat?.tags?.[0] || "",
+    label: input.label || cat?.label || "",
+    synopsis: input.synopsis || cat?.synopsis || "",
+    reviews: input.reviews || cat?.reviews || [],
+    coverQuery: input.coverQuery || cat?.coverQuery || ""
   };
 
   defaultPreviewTrack = null;
-  currentRouteState = { type: "album-detail", album: { ...activeDetailAlbum } };
+  currentRoute = { type: "album-detail", album: { ...activeDetailAlbum } };
   setActiveNav("album-detail");
 
-  detailAlbumCover.src = activeDetailAlbum.cover_url || "";
-  detailAlbumCover.alt = `${activeDetailAlbum.title} by ${activeDetailAlbum.artist}`;
-  detailAlbumArtistBtn.textContent = activeDetailAlbum.artist;
-  detailAlbumTitle.textContent = activeDetailAlbum.title;
-  detailAlbumYear.textContent = activeDetailAlbum.release_year || "—";
-  detailAlbumRuntime.textContent = activeDetailAlbum.runtime || "—";
-  detailAlbumGenre.textContent = activeDetailAlbum.genre || "—";
-  detailAlbumLabel.textContent = activeDetailAlbum.label || "";
-  detailPreviewWrap.classList.add("hidden");
-
-  if (activeDetailAlbum.synopsis) {
-    detailAlbumSynopsis.textContent = activeDetailAlbum.synopsis;
-    detailAlbumSynopsis.classList.remove("hidden");
-  } else {
-    detailAlbumSynopsis.classList.add("hidden");
-  }
-
-  detailTracklistCount.textContent = "Loading...";
-  detailTracklist.innerHTML = "";
-  detailNoteStatus.textContent = "";
+  $("detail-album-cover").src = activeDetailAlbum.cover_url;
+  $("detail-album-cover").alt = `${activeDetailAlbum.title} by ${activeDetailAlbum.artist}`;
+  $("detail-album-artist-btn").textContent = activeDetailAlbum.artist;
+  $("detail-album-title").textContent = activeDetailAlbum.title;
+  $("detail-album-year").textContent = activeDetailAlbum.release_year || "—";
+  $("detail-album-runtime").textContent = activeDetailAlbum.runtime || "—";
+  $("detail-album-genre").textContent = activeDetailAlbum.genre || "—";
+  $("detail-album-label").textContent = activeDetailAlbum.label || "";
+  $("detail-preview-wrap").classList.add("hidden");
+  $("detail-album-synopsis").textContent = activeDetailAlbum.synopsis || "";
+  $("detail-album-synopsis").classList.toggle("hidden", !activeDetailAlbum.synopsis);
+  $("detail-tracklist-count").textContent = "Loading...";
+  $("detail-tracklist").innerHTML = "";
+  $("detail-note-status").textContent = "";
 
   const [interaction, communityNotes] = await Promise.all([
     loadInteraction(sessionUser.id, activeDetailAlbum.album_id),
     loadCommunityNotes(activeDetailAlbum.album_id)
   ]);
-
-  if (reqId !== detailRequestId) return;
+  if (reqId !== detailReqId) return;
 
   activeDetailInteraction = interaction;
-  renderDetailInteractionState();
-  renderDetailNotes(activeDetailAlbum.reviews, communityNotes);
+  renderDetailButtons();
+  renderNotes($("detail-notes-list"), $("detail-notes-count"), activeDetailAlbum.reviews, communityNotes);
 
-  // If no synopsis yet and Last.fm key is available, fetch album summary quietly
-  if (!activeDetailAlbum.synopsis && hasLastFmKey) {
-    fetchLastFm("album.getInfo", {
-      artist: activeDetailAlbum.artist,
-      album: activeDetailAlbum.title,
-      autocorrect: 1
-    }).then((info) => {
-      if (reqId !== detailRequestId) return;
+  if (!activeDetailAlbum.synopsis) {
+    fetchLastFm("album.getInfo", { artist: activeDetailAlbum.artist, album: activeDetailAlbum.title, autocorrect: 1 }).then((info) => {
+      if (reqId !== detailReqId) return;
       const summary = cleanLastFmWiki(info?.album?.wiki?.summary || "");
       if (summary) {
         activeDetailAlbum.synopsis = summary;
-        detailAlbumSynopsis.textContent = summary;
-        detailAlbumSynopsis.classList.remove("hidden");
+        $("detail-album-synopsis").textContent = summary;
+        $("detail-album-synopsis").classList.remove("hidden");
       }
     });
   }
 
   let colId = activeDetailAlbum.collectionId;
-  if (!colId) {
-    const query = activeDetailAlbum.coverQuery || `${activeDetailAlbum.artist} ${activeDetailAlbum.title}`;
-    const found = await queryItunes(query, "album", 3);
-    if (reqId !== detailRequestId) return;
-    const best =
-      found.find((r) =>
-        r.collectionName?.toLowerCase().includes(activeDetailAlbum.title.toLowerCase().slice(0, 8))
-      ) || found[0];
+  if (!colId && !activeDetailAlbum.album_id?.startsWith("tbr-")) {
+    const found = await searchNonSingleAlbums(activeDetailAlbum.coverQuery || `${activeDetailAlbum.artist} ${activeDetailAlbum.title}`, 3);
+    if (reqId !== detailReqId) return;
+    const best = found.find((r) => r.collectionName.toLowerCase().includes(activeDetailAlbum.title.toLowerCase().slice(0, 8))) || found[0];
     if (best) {
       colId = best.collectionId;
       activeDetailAlbum.collectionId = colId;
       activeDetailAlbum.artistId = activeDetailAlbum.artistId || best.artistId;
+      activeDetailAlbum.release_date = activeDetailAlbum.release_date || best.releaseDate || null;
       if (!activeDetailAlbum.cover_url && best.artworkUrl100) {
         activeDetailAlbum.cover_url = toHighResCover(best.artworkUrl100);
-        detailAlbumCover.src = activeDetailAlbum.cover_url;
+        $("detail-album-cover").src = activeDetailAlbum.cover_url;
       }
     }
   }
 
-  if (colId) {
-    const lookupResults = await lookupItunes(colId, "song", 100);
-    if (reqId !== detailRequestId) return;
-
-    const colMeta = lookupResults.find((r) => r.wrapperType === "collection");
-    const tracks = lookupResults.filter((r) => r.wrapperType === "track");
-
-    if (colMeta) {
-      activeDetailAlbum.artistId = activeDetailAlbum.artistId || colMeta.artistId;
-      if (!activeDetailAlbum.cover_url && colMeta.artworkUrl100) {
-        activeDetailAlbum.cover_url = toHighResCover(colMeta.artworkUrl100);
-        detailAlbumCover.src = activeDetailAlbum.cover_url;
-      }
-      if (colMeta.releaseDate && (!activeDetailAlbum.release_year || activeDetailAlbum.release_year === "—")) {
-        activeDetailAlbum.release_year = colMeta.releaseDate.slice(0, 4);
-        detailAlbumYear.textContent = activeDetailAlbum.release_year;
-      }
-      if (colMeta.primaryGenreName) {
-        detailAlbumGenre.textContent = colMeta.primaryGenreName;
-      }
-      if (colMeta.copyright && (!activeDetailAlbum.label || activeDetailAlbum.label === "—")) {
-        detailAlbumLabel.textContent = colMeta.copyright;
-      }
-    }
-
-    if (tracks.length > 0) {
-      const totalMs = tracks.reduce((sum, t) => sum + (t.trackTimeMillis || 0), 0);
-      if (totalMs) {
-        detailAlbumRuntime.textContent = `${Math.round(totalMs / 60000)} min`;
-      }
-      detailTracklistCount.textContent = `${tracks.length} ${tracks.length === 1 ? "track" : "tracks"}`;
-
-      const playableTracks = tracks.filter((t) => Boolean(t.previewUrl));
-      const picked =
-        playableTracks.find((t) => (t.trackTimeMillis || 0) >= 60000) || playableTracks[0] || null;
-      if (picked) {
-        defaultPreviewTrack = {
-          trackId: picked.trackId || picked.trackName,
-          trackName: picked.trackName,
-          previewUrl: picked.previewUrl
-        };
-      }
-
-      detailTracklist.innerHTML = "";
-      tracks.forEach((track, idx) => {
-        const trackNumStr = String(track.trackNumber || idx + 1).padStart(2, "0");
-        const trackObj = track.previewUrl
-          ? {
-              trackId: track.trackId || `${idx}-${track.trackName}`,
-              trackName: track.trackName,
-              previewUrl: track.previewUrl
-            }
-          : null;
-
-        const li = document.createElement("li");
-        li.className = `track-row${trackObj ? " has-preview" : ""}`;
-        li.dataset.trackId = trackObj ? String(trackObj.trackId) : "";
-        li.dataset.trackNum = trackNumStr;
-        if (trackObj) li.title = "Click to preview (15s)";
-
-        li.innerHTML = `
-          <span class="track-num">${trackNumStr}</span>
-          <span class="track-name">${escapeHtml(track.trackName)}</span>
-          <span class="track-dur">${formatDuration(track.trackTimeMillis)}</span>
-        `;
-
-        if (trackObj) {
-          li.addEventListener("click", () => togglePreviewTrack(trackObj));
-        }
-
-        detailTracklist.appendChild(li);
-      });
-
-      updatePreviewUI();
-    } else {
-      detailTracklistCount.textContent = "Tracklist unavailable";
-    }
-  } else {
-    detailTracklistCount.textContent = "Tracklist unavailable";
-  }
-}
-
-function renderDetailNotes(curatedNotes = [], communityNotes = []) {
-  const combined = [...(curatedNotes || []), ...(communityNotes || [])];
-  detailNotesList.innerHTML = "";
-  detailNotesCount.textContent = `${combined.length} ${combined.length === 1 ? "note" : "notes"}`;
-
-  if (combined.length === 0) {
-    detailNotesList.innerHTML = `<p class="meta-label">No listener notes yet—leave the first impression below.</p>`;
+  if (!colId) {
+    $("detail-tracklist-count").textContent = "Tracklist unavailable";
     return;
   }
 
-  combined.forEach((rev) => {
-    const card = document.createElement("blockquote");
-    card.className = "review-card";
-    card.innerHTML = `
-      <p class="review-quote">“${escapeHtml(rev.text)}”</p>
-      <footer class="review-author">— ${escapeHtml(rev.author)} (${escapeHtml(rev.source)})</footer>
-    `;
-    detailNotesList.appendChild(card);
+  const lookupRes = await lookupItunes(colId, "song", 100);
+  if (reqId !== detailReqId) return;
+
+  const colMeta = lookupRes.find((r) => r.wrapperType === "collection");
+  const tracks = lookupRes.filter((r) => r.wrapperType === "track");
+
+  if (colMeta) {
+    activeDetailAlbum.artistId = activeDetailAlbum.artistId || colMeta.artistId;
+    activeDetailAlbum.release_date = activeDetailAlbum.release_date || colMeta.releaseDate || null;
+    if (!activeDetailAlbum.cover_url && colMeta.artworkUrl100) {
+      activeDetailAlbum.cover_url = toHighResCover(colMeta.artworkUrl100);
+      $("detail-album-cover").src = activeDetailAlbum.cover_url;
+    }
+    if (colMeta.releaseDate && (!activeDetailAlbum.release_year || activeDetailAlbum.release_year === "—")) {
+      activeDetailAlbum.release_year = colMeta.releaseDate.slice(0, 4);
+      $("detail-album-year").textContent = activeDetailAlbum.release_year;
+    }
+    if (colMeta.primaryGenreName) $("detail-album-genre").textContent = colMeta.primaryGenreName;
+    if (colMeta.copyright && (!activeDetailAlbum.label || activeDetailAlbum.label === "—")) {
+      $("detail-album-label").textContent = colMeta.copyright;
+    }
+  }
+
+  if (!tracks.length) {
+    $("detail-tracklist-count").textContent = "Tracklist unavailable";
+    return;
+  }
+
+  const totalMs = tracks.reduce((s, t) => s + (t.trackTimeMillis || 0), 0);
+  if (totalMs) $("detail-album-runtime").textContent = `${Math.round(totalMs / 60000)} min`;
+  $("detail-tracklist-count").textContent = `${tracks.length} ${tracks.length === 1 ? "track" : "tracks"}`;
+
+  const playable = tracks.filter((t) => t.previewUrl);
+  const picked = playable.find((t) => (t.trackTimeMillis || 0) >= 60000) || playable[0];
+  if (picked) {
+    defaultPreviewTrack = { trackId: picked.trackId || picked.trackName, trackName: picked.trackName, previewUrl: picked.previewUrl };
+  }
+
+  const listEl = $("detail-tracklist");
+  listEl.innerHTML = "";
+  tracks.forEach((track, idx) => {
+    const numStr = String(track.trackNumber || idx + 1).padStart(2, "0");
+    const tObj = track.previewUrl ? { trackId: track.trackId || `${idx}-${track.trackName}`, trackName: track.trackName, previewUrl: track.previewUrl } : null;
+    const li = document.createElement("li");
+    li.className = `track-row${tObj ? " has-preview" : ""}`;
+    li.dataset.trackId = tObj ? String(tObj.trackId) : "";
+    li.dataset.trackNum = numStr;
+    if (tObj) li.title = "Click to preview (15s)";
+    li.innerHTML = `<span class="track-num">${numStr}</span><span class="track-name">${escapeHtml(track.trackName)}</span><span class="track-dur">${formatDuration(track.trackTimeMillis)}</span>`;
+    if (tObj) li.addEventListener("click", () => togglePreviewTrack(tObj));
+    listEl.appendChild(li);
   });
+
+  updatePreviewUI();
 }
 
 // ------------------------------------------------------------
-// Artist Detail Page (LPs first, EPs second, Singles excluded)
+// Artist Detail Page (LPs First, EPs Second, Zero Singles)
 // ------------------------------------------------------------
-function updateFavoriteArtistButton() {
+function updateFavArtistBtn() {
   if (!activeDetailArtist || !userProfile) return;
-  const favs = userProfile.favorite_artists || [];
-  const isFav = favs.some((a) => a.toLowerCase() === activeDetailArtist.name.toLowerCase());
-  detailArtistFavBtn.classList.toggle("selected", isFav);
-  detailArtistFavBtn.textContent = isFav ? "Favorited artist" : "+ Favorite artist";
+  const isFav = (userProfile.favorite_artists || []).some((a) => a.toLowerCase() === activeDetailArtist.name.toLowerCase());
+  $("detail-artist-fav-btn").classList.toggle("selected", isFav);
+  $("detail-artist-fav-btn").textContent = isFav ? "Favorited artist" : "+ Favorite artist";
 }
 
-function renderArtistReleaseGrid(container, items, fallbackArtistName, artistId) {
-  container.innerHTML = "";
-  items.forEach((item) => {
-    const year = item.releaseDate ? item.releaseDate.slice(0, 4) : "";
-    const cover = toHighResCover(item.artworkUrl100);
-    const albumPayload = {
-      album_id: `itunes-${item.collectionId}`,
-      collectionId: item.collectionId,
-      artistId: item.artistId || artistId,
-      title: item.collectionName,
-      artist: item.artistName || fallbackArtistName,
-      cover_url: cover,
-      release_year: year,
-      genre: item.primaryGenreName || "",
-      label: item.copyright || ""
-    };
-
-    const card = document.createElement("article");
-    card.className = "shelf-card";
-    card.innerHTML = `
-      <button class="shelf-cover js-open-album" type="button" aria-label="Open ${escapeHtml(albumPayload.title)}">
-        ${cover ? `<img src="${escapeHtml(cover)}" alt="${escapeHtml(albumPayload.title)}" loading="lazy" />` : ""}
-      </button>
-      <div class="shelf-card-meta">
-        <button class="shelf-card-title js-open-album" type="button">${escapeHtml(albumPayload.title)}</button>
-        <span class="meta-label">${year || "Release"}${item.trackCount ? ` · ${item.trackCount} tracks` : ""}</span>
-      </div>
-    `;
-
-    card.querySelectorAll(".js-open-album").forEach((el) => {
-      el.addEventListener("click", () => openAlbumDetail(albumPayload));
-    });
-
-    container.appendChild(card);
-  });
-}
-
-async function openArtistDetail(artistInput, pushHistory = true) {
+async function openArtistDetail(input, push = true) {
   if (!sessionUser) return showAuthView("signin");
-  if (pushHistory) pushCurrentRouteToHistory();
+  if (push) pushRoute();
 
-  const reqId = ++artistRequestId;
-  activeDetailArtist = {
-    artistId: artistInput.artistId || null,
-    name: artistInput.name || "Artist",
-    genre: artistInput.genre || ""
-  };
-
-  currentRouteState = { type: "artist-detail", artist: { ...activeDetailArtist } };
+  const reqId = ++artistReqId;
+  activeDetailArtist = { artistId: input.artistId || null, name: input.name || "Artist", genre: input.genre || "" };
+  currentRoute = { type: "artist-detail", artist: { ...activeDetailArtist } };
   setActiveNav("artist-detail");
 
-  detailArtistName.textContent = activeDetailArtist.name;
-  detailArtistGenre.textContent = activeDetailArtist.genre || "Artist";
-  detailArtistStatus.textContent = "Loading discography...";
-  artistLpsSection.classList.add("hidden");
-  artistEpsSection.classList.add("hidden");
-  detailArtistEmpty.classList.add("hidden");
-  artistLpsGrid.innerHTML = "";
-  artistEpsGrid.innerHTML = "";
-  updateFavoriteArtistButton();
+  $("detail-artist-name").textContent = activeDetailArtist.name;
+  $("detail-artist-genre").textContent = activeDetailArtist.genre || "Artist";
+  $("detail-artist-status").textContent = "Loading discography...";
+  $("artist-lps-section").classList.add("hidden");
+  $("artist-eps-section").classList.add("hidden");
+  $("detail-artist-empty").classList.add("hidden");
+  updateFavArtistBtn();
 
   let artistId = activeDetailArtist.artistId;
   if (!artistId) {
-    let artistMatches = await queryItunes(activeDetailArtist.name, "musicArtist", 5);
-    if (!artistMatches.length && /[,&]/.test(activeDetailArtist.name)) {
-      const primaryName = activeDetailArtist.name.split(/[,&]/)[0].trim();
-      artistMatches = await queryItunes(primaryName, "musicArtist", 5);
+    let matches = await queryItunes(activeDetailArtist.name, "musicArtist", 5);
+    if (!matches.length && /[,&]/.test(activeDetailArtist.name)) {
+      matches = await queryItunes(activeDetailArtist.name.split(/[,&]/)[0].trim(), "musicArtist", 5);
     }
-    if (reqId !== artistRequestId) return;
-
-    const exact =
-      artistMatches.find(
-        (a) => a.artistName?.toLowerCase() === activeDetailArtist.name.toLowerCase()
-      ) || artistMatches[0];
-
+    if (reqId !== artistReqId) return;
+    const exact = matches.find((a) => a.artistName?.toLowerCase() === activeDetailArtist.name.toLowerCase()) || matches[0];
     if (exact) {
       artistId = exact.artistId;
       activeDetailArtist.artistId = artistId;
       activeDetailArtist.name = exact.artistName || activeDetailArtist.name;
       activeDetailArtist.genre = exact.primaryGenreName || activeDetailArtist.genre;
-      detailArtistName.textContent = activeDetailArtist.name;
-      detailArtistGenre.textContent = activeDetailArtist.genre || "Artist";
-      updateFavoriteArtistButton();
+      $("detail-artist-name").textContent = activeDetailArtist.name;
+      $("detail-artist-genre").textContent = activeDetailArtist.genre || "Artist";
+      updateFavArtistBtn();
     }
   }
 
-  let rawReleases = [];
+  let raw = [];
   if (artistId) {
-    const lookupRes = await lookupItunes(artistId, "album", 100);
-    if (reqId !== artistRequestId) return;
-    const artistMeta = lookupRes.find((r) => r.wrapperType === "artist");
-    if (artistMeta?.primaryGenreName) {
-      detailArtistGenre.textContent = artistMeta.primaryGenreName;
-    }
-    rawReleases = lookupRes.filter((r) => r.wrapperType === "collection" && r.collectionName);
+    const res = await lookupItunes(artistId, "album", 100);
+    if (reqId !== artistReqId) return;
+    const meta = res.find((r) => r.wrapperType === "artist");
+    if (meta?.primaryGenreName) $("detail-artist-genre").textContent = meta.primaryGenreName;
+    raw = res.filter((r) => r.wrapperType === "collection" && isNonSingleRelease(r));
   } else {
-    rawReleases = await queryItunes(activeDetailArtist.name, "album", 40);
-    if (reqId !== artistRequestId) return;
+    raw = await searchNonSingleAlbums(activeDetailArtist.name, 25);
+    if (reqId !== artistReqId) return;
   }
 
-  const seenTitles = new Set();
-  const uniqueReleases = rawReleases
+  const seen = new Set();
+  const unique = raw
     .filter((a) => {
-      const key = a.collectionName.toLowerCase().trim();
-      if (seenTitles.has(key)) return false;
-      seenTitles.add(key);
+      const k = a.collectionName.toLowerCase().trim();
+      if (seen.has(k)) return false;
+      seen.add(k);
       return true;
     })
     .sort((a, b) => (b.releaseDate || "").localeCompare(a.releaseDate || ""));
 
-  const lps = [];
-  const eps = [];
-  uniqueReleases.forEach((rel) => {
-    const type = classifyRelease(rel);
-    if (type === "lp") lps.push(rel);
-    else if (type === "ep") eps.push(rel);
-  });
+  const lps = unique.filter((r) => classifyRelease(r) === "lp");
+  const eps = unique.filter((r) => classifyRelease(r) === "ep");
 
-  detailArtistStatus.textContent = "";
+  $("detail-artist-status").textContent = "";
 
-  if (lps.length > 0) {
-    artistLpsCount.textContent = `${lps.length} ${lps.length === 1 ? "album" : "albums"}`;
-    renderArtistReleaseGrid(artistLpsGrid, lps, activeDetailArtist.name, artistId);
-    artistLpsSection.classList.remove("hidden");
-  }
+  const fillGrid = (sectionId, countId, gridId, list, singular, plural) => {
+    if (!list.length) return;
+    $(countId).textContent = `${list.length} ${list.length === 1 ? singular : plural}`;
+    const grid = $(gridId);
+    grid.innerHTML = "";
+    list.forEach((item) => {
+      grid.appendChild(createAlbumCard({ ...toAlbumPayloadFromItunes(item), trackCount: item.trackCount }, { mode: "artist" }));
+    });
+    $(sectionId).classList.remove("hidden");
+  };
 
-  if (eps.length > 0) {
-    artistEpsCount.textContent = `${eps.length} ${eps.length === 1 ? "EP" : "EPs"}`;
-    renderArtistReleaseGrid(artistEpsGrid, eps, activeDetailArtist.name, artistId);
-    artistEpsSection.classList.remove("hidden");
-  }
-
-  if (lps.length === 0 && eps.length === 0) {
-    detailArtistEmpty.classList.remove("hidden");
-  }
+  fillGrid("artist-lps-section", "artist-lps-count", "artist-lps-grid", lps, "album", "albums");
+  fillGrid("artist-eps-section", "artist-eps-count", "artist-eps-grid", eps, "EP", "EPs");
+  $("detail-artist-empty").classList.toggle("hidden", lps.length > 0 || eps.length > 0);
 }
 
 // ------------------------------------------------------------
-// Shelf View (Want to listen / Listened + Search to Add)
+// Shelf View (Want / TBR / Listened + Sort)
 // ------------------------------------------------------------
 async function showShelfView(clearHistory = true) {
   if (!sessionUser) return showAuthView("signin");
   if (clearHistory) viewHistory = [];
-  currentRouteState = { type: "shelf" };
+  currentRoute = { type: "shelf" };
   setActiveNav("shelf");
+  $("shelf-sort-select").value = activeShelfSort;
   shelfItems = await loadUserShelf(sessionUser.id);
   renderShelf();
 }
 
+function sortShelfList(list, mode) {
+  const year = (i) => parseInt(i.release_year || (i.release_date || "").slice(0, 4), 10) || 0;
+  const sorters = {
+    "year-desc": (a, b) => year(b) - year(a),
+    "year-asc": (a, b) => (year(a) || 9999) - (year(b) || 9999),
+    popularity: (a, b) => Number(b.popularity || 0) - Number(a.popularity || 0),
+    title: (a, b) => (a.title || "").localeCompare(b.title || ""),
+    artist: (a, b) => (a.artist || "").localeCompare(b.artist || ""),
+    recent: (a, b) => (b.updated_at || "").localeCompare(a.updated_at || "")
+  };
+  return [...list].sort(sorters[mode] || sorters.recent);
+}
+
+async function backfillPopularityIfNeeded() {
+  const missing = shelfItems.filter((i) => !i.popularity && i.title && i.artist && !isItemTbr(i));
+  if (!missing.length) return;
+  await Promise.all(
+    missing.slice(0, 12).map(async (item) => {
+      const listeners = await fetchAlbumPopularity(item.artist, item.title);
+      if (listeners > 0) {
+        item.popularity = listeners;
+        await sb.from("user_album_interactions").update({ popularity: listeners }).eq("user_id", sessionUser.id).eq("album_id", item.album_id);
+      }
+    })
+  );
+  if (currentView === "shelf" && activeShelfSort === "popularity") renderShelf();
+}
+
 function renderShelf() {
-  const wantList = shelfItems.filter((item) => item.saved && !item.listened);
-  const listenedList = shelfItems.filter((item) => item.listened);
+  const buckets = {
+    tbr: shelfItems.filter((i) => isItemTbr(i)),
+    want: shelfItems.filter((i) => i.saved && !i.listened && !isItemTbr(i)),
+    listened: shelfItems.filter((i) => i.listened)
+  };
 
-  countWant.textContent = wantList.length;
-  countListened.textContent = listenedList.length;
-  tabWant.classList.toggle("active", activeShelfTab === "want");
-  tabListened.classList.toggle("active", activeShelfTab === "listened");
+  ["want", "tbr", "listened"].forEach((k) => {
+    $(`count-${k}`).textContent = buckets[k].length;
+    $(`tab-${k}`).classList.toggle("active", activeShelfTab === k);
+  });
+  $("tbr-manual-bar").classList.toggle("hidden", activeShelfTab !== "tbr");
 
-  const visibleItems = activeShelfTab === "want" ? wantList : listenedList;
-  shelfGrid.innerHTML = "";
-  shelfEmptyState.classList.toggle("hidden", visibleItems.length > 0);
+  const visible = sortShelfList(buckets[activeShelfTab], activeShelfSort);
+  const grid = $("shelf-grid");
+  grid.innerHTML = "";
+  $("shelf-empty-state").classList.toggle("hidden", visible.length > 0);
 
-  visibleItems.forEach((item) => {
-    const card = document.createElement("article");
-    card.className = "shelf-card";
-
-    const switchLabel = item.listened ? "Move to Want" : "Mark Listened";
-    const noteText = item.positive_note ? escapeHtml(item.positive_note) : "";
-    const albumPayload = {
-      album_id: item.album_id,
-      title: item.title || item.album_id,
-      artist: item.artist || "Unknown artist",
-      cover_url: item.cover_url || "",
-      release_year: item.release_year || ""
-    };
-
-    card.innerHTML = `
-      <button class="shelf-cover js-open-album" type="button" aria-label="Open ${escapeHtml(albumPayload.title)}">
-        ${item.cover_url ? `<img src="${escapeHtml(item.cover_url)}" alt="${escapeHtml(albumPayload.title)}" loading="lazy" />` : ""}
-      </button>
-      <div class="shelf-card-meta">
-        <button class="shelf-card-title js-open-album" type="button">${escapeHtml(albumPayload.title)}</button>
-        <button class="shelf-card-artist js-open-artist" type="button">${escapeHtml(albumPayload.artist)}${item.release_year ? ` · ${escapeHtml(item.release_year)}` : ""}</button>
-      </div>
-      ${noteText ? `<p class="shelf-card-note">“${noteText}”</p>` : ""}
-      <div class="shelf-card-actions">
-        <button class="text-btn js-switch-shelf" type="button">${switchLabel}</button>
-        <button class="text-btn js-edit-note" type="button">${noteText ? "Edit note" : "Add note"}</button>
-        <button class="text-btn js-remove-shelf" type="button">Remove</button>
-      </div>
-      <div class="shelf-note-editor hidden">
-        <textarea rows="2" placeholder="Write a positive note (no scores)...">${noteText}</textarea>
-        <div class="note-actions">
-          <button class="text-btn js-save-note" type="button">Save</button>
-          <button class="text-btn js-cancel-note" type="button">Cancel</button>
-        </div>
-      </div>
-    `;
-
-    card.querySelectorAll(".js-open-album").forEach((el) => {
-      el.addEventListener("click", () => openAlbumDetail(albumPayload));
-    });
-
-    card.querySelector(".js-open-artist").addEventListener("click", () => {
-      openArtistDetail({ name: albumPayload.artist });
-    });
-
-    card.querySelector(".js-switch-shelf").addEventListener("click", async () => {
-      const nextListened = !item.listened;
-      await upsertAlbumOnShelf({
-        ...item,
-        listened: nextListened,
-        saved: !nextListened
-      });
-      shelfItems = await loadUserShelf(sessionUser.id);
-      renderShelf();
-    });
-
-    card.querySelector(".js-remove-shelf").addEventListener("click", async () => {
-      await deleteAlbumFromShelf(item.album_id);
-      shelfItems = shelfItems.filter((s) => s.album_id !== item.album_id);
-      renderShelf();
-    });
-
-    const noteEditor = card.querySelector(".shelf-note-editor");
-    const textarea = noteEditor.querySelector("textarea");
-
-    card.querySelector(".js-edit-note").addEventListener("click", () => {
-      noteEditor.classList.toggle("hidden");
-      if (!noteEditor.classList.contains("hidden")) textarea.focus();
-    });
-
-    card.querySelector(".js-cancel-note").addEventListener("click", () => {
-      noteEditor.classList.add("hidden");
-    });
-
-    card.querySelector(".js-save-note").addEventListener("click", async () => {
-      await upsertAlbumOnShelf({
-        ...item,
-        positive_note: textarea.value.trim() || null
-      });
-      shelfItems = await loadUserShelf(sessionUser.id);
-      renderShelf();
-    });
-
-    shelfGrid.appendChild(card);
+  visible.forEach((item) => {
+    grid.appendChild(
+      createAlbumCard(item, {
+        mode: "shelf",
+        onShelfChanged: async (removedId) => {
+          shelfItems = removedId ? shelfItems.filter((s) => s.album_id !== removedId) : await loadUserShelf(sessionUser.id);
+          renderShelf();
+        }
+      })
+    );
   });
 }
 
-async function populateAlbumDropdown(term, container, onSelectClear) {
-  if (term.length < 2) {
-    container.classList.add("hidden");
-    return;
-  }
-
-  const results = await queryItunes(term, "album", 6);
+// ------------------------------------------------------------
+// Search Dropdown & Full Search Results (Zero Singles)
+// ------------------------------------------------------------
+async function populateAlbumDropdown(term, container, onClear) {
+  if (term.length < 2) return container.classList.add("hidden");
+  const results = await searchNonSingleAlbums(term, 6);
   container.innerHTML = "";
-
-  if (results.length === 0) {
-    container.classList.add("hidden");
-    return;
-  }
+  if (!results.length) return container.classList.add("hidden");
 
   results.forEach((item) => {
-    if (!item.collectionName || !item.artistName) return;
     const albumId = `itunes-${item.collectionId}`;
-    const year = item.releaseDate ? item.releaseDate.slice(0, 4) : "";
+    const isFuture = isFutureReleaseDate(item.releaseDate);
     const existing = shelfItems.find((s) => s.album_id === albumId);
-    const payloadBase = {
-      album_id: albumId,
-      collectionId: item.collectionId,
-      artistId: item.artistId,
-      title: item.collectionName,
-      artist: item.artistName,
-      cover_url: toHighResCover(item.artworkUrl100),
-      release_year: year,
-      genre: item.primaryGenreName || "",
-      label: item.copyright || "",
-      positive_note: existing?.positive_note || null
-    };
+    const payload = toAlbumPayloadFromItunes(item, existing?.positive_note || null);
 
     const row = document.createElement("div");
     row.className = "search-result-item";
@@ -2061,315 +1610,172 @@ async function populateAlbumDropdown(term, container, onSelectClear) {
       <div class="search-result-left clickable-part js-open-album">
         <img class="search-thumb" src="${escapeHtml(item.artworkUrl100 || "")}" alt="" />
         <span class="search-item-text">
-          <span class="search-item-title">${escapeHtml(item.collectionName)}</span>
-          <span class="search-item-sub">${escapeHtml(item.artistName)}${year ? ` · ${year}` : ""}</span>
+          <span class="search-item-title">${escapeHtml(payload.title)}</span>
+          <span class="search-item-sub">${escapeHtml(payload.artist)}${payload.release_year ? ` · ${payload.release_year}` : ""}${isFuture ? " · Upcoming" : ""}</span>
         </span>
       </div>
       <div class="search-quick-actions">
-        <button class="mini-btn js-add-want ${existing?.saved && !existing?.listened ? "active" : ""}" type="button">+ Want</button>
-        <button class="mini-btn js-add-listened ${existing?.listened ? "active" : ""}" type="button">+ Listened</button>
+        <button class="mini-btn js-want ${existing?.saved && !existing?.listened ? "active" : ""}" type="button">${isFuture ? "+ TBR" : "+ Want"}</button>
+        <button class="mini-btn js-listened ${existing?.listened ? "active" : ""}" type="button">+ Listened</button>
       </div>
     `;
 
     row.querySelector(".js-open-album").addEventListener("click", () => {
       container.classList.add("hidden");
-      openAlbumDetail(payloadBase);
+      openAlbumDetail(payload);
     });
-
-    row.querySelector(".js-add-want").addEventListener("click", async () => {
-      await upsertAlbumOnShelf({ ...payloadBase, saved: true, listened: false });
+    const quickSave = async (listened) => {
+      await upsertAlbumOnShelf({ ...payload, saved: !listened, listened, is_tbr: !listened && isFuture });
       shelfItems = await loadUserShelf(sessionUser.id);
       if (currentView === "shelf") {
-        activeShelfTab = "want";
+        activeShelfTab = listened ? "listened" : isFuture ? "tbr" : "want";
         renderShelf();
       }
-      onSelectClear();
-    });
-
-    row.querySelector(".js-add-listened").addEventListener("click", async () => {
-      await upsertAlbumOnShelf({ ...payloadBase, saved: false, listened: true });
-      shelfItems = await loadUserShelf(sessionUser.id);
-      if (currentView === "shelf") {
-        activeShelfTab = "listened";
-        renderShelf();
-      }
-      onSelectClear();
-    });
-
+      onClear();
+    };
+    row.querySelector(".js-want").addEventListener("click", () => quickSave(false));
+    row.querySelector(".js-listened").addEventListener("click", () => quickSave(true));
     container.appendChild(row);
   });
 
-  const hintRow = document.createElement("button");
-  hintRow.type = "button";
-  hintRow.className = "search-result-item clickable";
-  hintRow.innerHTML = `<span class="meta-label">See all results for “${escapeHtml(term)}” →</span>`;
-  hintRow.addEventListener("click", () => {
+  const hint = document.createElement("button");
+  hint.type = "button";
+  hint.className = "search-result-item clickable";
+  hint.innerHTML = `<span class="meta-label">See all results for “${escapeHtml(term)}” →</span>`;
+  hint.addEventListener("click", () => {
     container.classList.add("hidden");
     showSearchView(term, false);
   });
-  container.appendChild(hintRow);
-
+  container.appendChild(hint);
   container.classList.remove("hidden");
 }
 
-// ------------------------------------------------------------
-// Full Search Results View
-// ------------------------------------------------------------
 async function showSearchView(initialQuery = "", clearHistory = true) {
   if (!sessionUser) return showAuthView("signin");
   if (clearHistory) viewHistory = [];
-  else if (currentView !== "search") pushCurrentRouteToHistory();
+  else if (currentView !== "search") pushRoute();
 
   lastSearchQuery = initialQuery;
-  currentRouteState = { type: "search", query: initialQuery };
+  currentRoute = { type: "search", query: initialQuery };
   setActiveNav("search");
-
-  globalSearchInput.value = initialQuery;
-  globalSearchDropdown.classList.add("hidden");
+  $("global-search-input").value = initialQuery;
+  $("global-search-dropdown").classList.add("hidden");
 
   if (initialQuery.trim()) {
     await runFullSearch(initialQuery.trim());
   } else {
-    searchResultsStatus.textContent = "Search by album title, artist name, or listener.";
-    searchArtistsSection.classList.add("hidden");
-    searchAlbumsSection.classList.add("hidden");
-    searchListenersSection.classList.add("hidden");
-    searchEmptyState.classList.add("hidden");
-    globalSearchInput.focus();
+    $("search-results-status").textContent = "Search by album title, artist name, or listener.";
+    ["search-artists-section", "search-albums-section", "search-listeners-section", "search-empty-state"].forEach((id) =>
+      $(id).classList.add("hidden")
+    );
+    $("global-search-input").focus();
   }
 }
 
 async function runFullSearch(query) {
   lastSearchQuery = query;
-  currentRouteState = { type: "search", query };
-  globalSearchDropdown.classList.add("hidden");
+  currentRoute = { type: "search", query };
+  $("global-search-dropdown").classList.add("hidden");
+  $("search-results-status").textContent = `Searching for “${query}”...`;
+  ["search-artists-section", "search-albums-section", "search-listeners-section", "search-empty-state"].forEach((id) =>
+    $(id).classList.add("hidden")
+  );
 
-  searchResultsStatus.textContent = `Searching for “${query}”...`;
-  searchArtistsSection.classList.add("hidden");
-  searchAlbumsSection.classList.add("hidden");
-  searchListenersSection.classList.add("hidden");
-  searchEmptyState.classList.add("hidden");
-
-  const [albumsRaw, artistsRaw, listeners, myShelf] = await Promise.all([
-    queryItunes(query, "album", 16),
+  const [albums, artistsRaw, listeners, myShelf] = await Promise.all([
+    searchNonSingleAlbums(query, 16),
     queryItunes(query, "musicArtist", 8),
     searchListeners(query),
     loadUserShelf(sessionUser.id)
   ]);
-
   shelfItems = myShelf;
 
   const seenArtists = new Set();
   const artists = artistsRaw.filter((a) => {
     if (!a.artistName) return false;
-    const key = a.artistName.toLowerCase();
-    if (seenArtists.has(key)) return false;
-    seenArtists.add(key);
-    return true;
+    const k = a.artistName.toLowerCase();
+    return seenArtists.has(k) ? false : (seenArtists.add(k), true);
   });
 
-  const albums = albumsRaw.filter((a) => a.collectionName && a.artistName);
-  const totalCount = artists.length + albums.length + listeners.length;
+  const total = artists.length + albums.length + listeners.length;
+  $("search-results-status").textContent = `${total} ${total === 1 ? "result" : "results"} for “${query}”`;
+  if (!total) return $("search-empty-state").classList.remove("hidden");
 
-  searchResultsStatus.textContent = `${totalCount} ${totalCount === 1 ? "result" : "results"} for “${query}”`;
-
-  if (totalCount === 0) {
-    searchEmptyState.classList.remove("hidden");
-    return;
-  }
-
-  if (artists.length > 0) {
-    searchArtistsList.innerHTML = "";
+  if (artists.length) {
+    const list = $("search-artists-list");
+    list.innerHTML = "";
     artists.forEach((a) => {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "artist-pill-btn";
-      btn.innerHTML = `
-        <span class="artist-pill-name">${escapeHtml(a.artistName)}</span>
-        <span class="artist-pill-genre">${escapeHtml(a.primaryGenreName || "Artist")}</span>
-      `;
-      btn.addEventListener("click", () => {
-        openArtistDetail({
-          artistId: a.artistId,
-          name: a.artistName,
-          genre: a.primaryGenreName || ""
-        });
-      });
-      searchArtistsList.appendChild(btn);
+      btn.innerHTML = `<span class="artist-pill-name">${escapeHtml(a.artistName)}</span><span class="artist-pill-genre">${escapeHtml(a.primaryGenreName || "Artist")}</span>`;
+      btn.addEventListener("click", () => openArtistDetail({ artistId: a.artistId, name: a.artistName, genre: a.primaryGenreName || "" }));
+      list.appendChild(btn);
     });
-    searchArtistsSection.classList.remove("hidden");
+    $("search-artists-section").classList.remove("hidden");
   }
 
-  if (albums.length > 0) {
-    searchAlbumsGrid.innerHTML = "";
+  if (albums.length) {
+    const grid = $("search-albums-grid");
+    grid.innerHTML = "";
     albums.forEach((item) => {
-      const albumId = `itunes-${item.collectionId}`;
-      const year = item.releaseDate ? item.releaseDate.slice(0, 4) : "";
-      const cover = toHighResCover(item.artworkUrl100);
-      const existing = shelfItems.find((s) => s.album_id === albumId);
-
-      const albumPayload = {
-        album_id: albumId,
-        collectionId: item.collectionId,
-        artistId: item.artistId,
-        title: item.collectionName,
-        artist: item.artistName,
-        cover_url: cover,
-        release_year: year,
-        genre: item.primaryGenreName || "",
-        label: item.copyright || ""
-      };
-
-      const card = document.createElement("article");
-      card.className = "shelf-card";
-      card.innerHTML = `
-        <button class="shelf-cover js-open-album" type="button" aria-label="Open ${escapeHtml(albumPayload.title)}">
-          ${cover ? `<img src="${escapeHtml(cover)}" alt="${escapeHtml(albumPayload.title)}" loading="lazy" />` : ""}
-        </button>
-        <div class="shelf-card-meta">
-          <button class="shelf-card-title js-open-album" type="button">${escapeHtml(albumPayload.title)}</button>
-          <button class="shelf-card-artist js-open-artist" type="button">${escapeHtml(albumPayload.artist)}${year ? ` · ${year}` : ""}</button>
-        </div>
-        <div class="search-quick-actions">
-          <button class="mini-btn js-want ${existing?.saved && !existing?.listened ? "active" : ""}" type="button">${existing?.saved && !existing?.listened ? "On Want" : "+ Want"}</button>
-          <button class="mini-btn js-listened ${existing?.listened ? "active" : ""}" type="button">${existing?.listened ? "Listened" : "+ Listened"}</button>
-        </div>
-      `;
-
-      card.querySelectorAll(".js-open-album").forEach((el) => {
-        el.addEventListener("click", () => openAlbumDetail(albumPayload));
-      });
-
-      card.querySelector(".js-open-artist").addEventListener("click", () => {
-        openArtistDetail({ artistId: item.artistId, name: item.artistName });
-      });
-
-      const wantAction = card.querySelector(".js-want");
-      const listenedAction = card.querySelector(".js-listened");
-
-      wantAction.addEventListener("click", async () => {
-        await upsertAlbumOnShelf({ ...albumPayload, saved: true, listened: false });
-        wantAction.classList.add("active");
-        wantAction.textContent = "On Want";
-        listenedAction.classList.remove("active");
-        listenedAction.textContent = "+ Listened";
-      });
-
-      listenedAction.addEventListener("click", async () => {
-        await upsertAlbumOnShelf({ ...albumPayload, saved: false, listened: true });
-        listenedAction.classList.add("active");
-        listenedAction.textContent = "Listened";
-        wantAction.classList.remove("active");
-        wantAction.textContent = "+ Want";
-      });
-
-      searchAlbumsGrid.appendChild(card);
+      const payload = toAlbumPayloadFromItunes(item);
+      const existing = shelfItems.find((s) => s.album_id === payload.album_id);
+      grid.appendChild(createAlbumCard(payload, { mode: "search", existing }));
     });
-    searchAlbumsSection.classList.remove("hidden");
+    $("search-albums-section").classList.remove("hidden");
   }
 
-  if (listeners.length > 0) {
-    searchListenersList.innerHTML = "";
-    listeners.forEach((profile) => {
-      searchListenersList.appendChild(createListenerCard(profile));
-    });
-    searchListenersSection.classList.remove("hidden");
+  if (listeners.length) {
+    const list = $("search-listeners-list");
+    list.innerHTML = "";
+    listeners.forEach((p) => list.appendChild(createListenerCard(p)));
+    $("search-listeners-section").classList.remove("hidden");
   }
 }
 
 // ------------------------------------------------------------
-// Listeners Directory & Public Profile View
+// Listeners Directory & Public Profile
 // ------------------------------------------------------------
-function createListenerCard(profile) {
-  const card = document.createElement("button");
-  card.type = "button";
-  card.className = "listener-card";
-
-  const avatarEl = document.createElement("div");
-  avatarEl.className = "avatar-circle avatar-md";
-  renderAvatar(avatarEl, profile.avatar_url, profile.display_name);
-
-  const tastesSummary = (profile.tastes || []).slice(0, 3).join(" · ");
-  const isMe = profile.user_id === sessionUser?.id;
-
-  const infoEl = document.createElement("div");
-  infoEl.className = "listener-card-info";
-  infoEl.innerHTML = `
-    <span class="listener-card-name">${escapeHtml(profile.display_name)}${isMe ? " (You)" : ""}</span>
-    ${profile.bio ? `<span class="listener-card-bio">${escapeHtml(profile.bio)}</span>` : ""}
-    ${tastesSummary ? `<span class="listener-card-tastes">${escapeHtml(tastesSummary)}</span>` : ""}
-  `;
-
-  card.appendChild(avatarEl);
-  card.appendChild(infoEl);
-  card.addEventListener("click", () => {
-    if (currentView !== "listeners") {
-      pushCurrentRouteToHistory();
-      setActiveNav("listeners");
-    }
-    openPublicProfile(profile, false);
-  });
-  return card;
-}
-
 async function showListenersView(clearHistory = true) {
   if (!sessionUser) return showAuthView("signin");
   if (clearHistory) viewHistory = [];
-  currentRouteState = { type: "listeners" };
+  currentRoute = { type: "listeners" };
   setActiveNav("listeners");
-  listenersDirectory.classList.remove("hidden");
-  publicProfileView.classList.add("hidden");
-  await renderListenersDirectory(userSearchInput.value);
+  $("listeners-directory").classList.remove("hidden");
+  $("public-profile-view").classList.add("hidden");
+  await renderListenersDirectory($("user-search-input").value);
 }
 
 async function renderListenersDirectory(query = "") {
   const users = await searchListeners(query);
-  listenersList.innerHTML = "";
-  listenersEmpty.classList.toggle("hidden", users.length > 0);
-
-  users.forEach((profile) => {
-    listenersList.appendChild(createListenerCard(profile));
-  });
+  const list = $("listeners-list");
+  list.innerHTML = "";
+  $("listeners-empty").classList.toggle("hidden", users.length > 0);
+  users.forEach((p) => list.appendChild(createListenerCard(p)));
 }
 
-async function openPublicProfile(profile, pushHistory = true) {
-  if (pushHistory) pushCurrentRouteToHistory();
-  publicProfileCurrent = profile;
-  currentRouteState = { type: "public-profile", profile };
+async function openPublicProfile(profile, push = true) {
+  if (push) pushRoute();
+  currentRoute = { type: "public-profile", profile };
+  $("listeners-directory").classList.add("hidden");
+  $("public-profile-view").classList.remove("hidden");
 
-  listenersDirectory.classList.add("hidden");
-  publicProfileView.classList.remove("hidden");
+  renderAvatar($("public-avatar"), profile.avatar_url, profile.display_name);
+  $("public-name").textContent = profile.display_name;
+  $("public-bio").textContent = profile.bio || "";
+  $("public-bio").classList.toggle("hidden", !profile.bio);
+  $("public-tastes").innerHTML = (profile.tastes || []).map((t) => `<span class="tag-pill">${escapeHtml(t)}</span>`).join("");
 
-  renderAvatar(document.getElementById("public-avatar"), profile.avatar_url, profile.display_name);
-  document.getElementById("public-name").textContent = profile.display_name;
-
-  const bioEl = document.getElementById("public-bio");
-  bioEl.textContent = profile.bio || "";
-  bioEl.classList.toggle("hidden", !profile.bio);
-
-  const tastesEl = document.getElementById("public-tastes");
-  tastesEl.innerHTML = "";
-  (profile.tastes || []).forEach((tag) => {
-    const span = document.createElement("span");
-    span.className = "tag-pill";
-    span.textContent = tag;
-    tastesEl.appendChild(span);
-  });
-
-  const artistsEl = document.getElementById("public-artists");
+  const artistsEl = $("public-artists");
   artistsEl.innerHTML = "";
   if (profile.favorite_artists?.length) {
-    const label = document.createElement("span");
-    label.className = "meta-label";
-    label.textContent = "Favorite artists:";
-    artistsEl.appendChild(label);
-
-    profile.favorite_artists.forEach((artistName) => {
+    artistsEl.innerHTML = `<span class="meta-label">Favorite artists:</span>`;
+    profile.favorite_artists.forEach((name) => {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "text-btn";
-      btn.textContent = artistName;
-      btn.addEventListener("click", () => openArtistDetail({ name: artistName }));
+      btn.textContent = name;
+      btn.addEventListener("click", () => openArtistDetail({ name }));
       artistsEl.appendChild(btn);
     });
     artistsEl.classList.remove("hidden");
@@ -2377,124 +1783,88 @@ async function openPublicProfile(profile, pushHistory = true) {
     artistsEl.classList.add("hidden");
   }
 
+  const topFive = Array.isArray(profile.top_five_albums) ? profile.top_five_albums.slice(0, 5) : [];
+  const topGrid = $("public-top-five-grid");
+  topGrid.innerHTML = "";
+  $("public-top-five-section").classList.toggle("hidden", !topFive.length);
+  topFive.forEach((alb) => {
+    const slot = document.createElement("div");
+    slot.className = "top-five-slot";
+    slot.innerHTML = `
+      <button class="top-five-cover clickable" type="button" aria-label="Open ${escapeHtml(alb.title)}">
+        ${alb.cover_url ? `<img src="${escapeHtml(alb.cover_url)}" alt="${escapeHtml(alb.title)}" loading="lazy" />` : VINYL_PLACEHOLDER_SVG}
+      </button>
+      <span class="top-five-title">${escapeHtml(alb.title)}</span>
+      <span class="top-five-artist">${escapeHtml(alb.artist)}</span>
+    `;
+    slot.querySelector("button").addEventListener("click", () => openAlbumDetail(alb));
+    topGrid.appendChild(slot);
+  });
+
   publicShelfItems = await loadUserShelf(profile.user_id);
   activePublicShelfTab = "listened";
   renderPublicShelf();
 }
 
 function renderPublicShelf() {
-  const listenedList = publicShelfItems.filter((item) => item.listened);
-  const wantList = publicShelfItems.filter((item) => item.saved && !item.listened);
+  const buckets = {
+    listened: publicShelfItems.filter((i) => i.listened),
+    tbr: publicShelfItems.filter((i) => isItemTbr(i)),
+    want: publicShelfItems.filter((i) => i.saved && !i.listened && !isItemTbr(i))
+  };
 
-  publicCountListened.textContent = listenedList.length;
-  publicCountWant.textContent = wantList.length;
-  publicTabListened.classList.toggle("active", activePublicShelfTab === "listened");
-  publicTabWant.classList.toggle("active", activePublicShelfTab === "want");
-
-  const visibleItems = activePublicShelfTab === "listened" ? listenedList : wantList;
-  publicShelfGrid.innerHTML = "";
-  publicShelfEmpty.classList.toggle("hidden", visibleItems.length > 0);
-
-  visibleItems.forEach((item) => {
-    const albumPayload = {
-      album_id: item.album_id,
-      title: item.title || item.album_id,
-      artist: item.artist || "Unknown artist",
-      cover_url: item.cover_url || "",
-      release_year: item.release_year || ""
-    };
-    const noteText = item.positive_note ? escapeHtml(item.positive_note) : "";
-
-    const card = document.createElement("article");
-    card.className = "shelf-card";
-    card.innerHTML = `
-      <button class="shelf-cover js-open-album" type="button" aria-label="Open ${escapeHtml(albumPayload.title)}">
-        ${item.cover_url ? `<img src="${escapeHtml(item.cover_url)}" alt="${escapeHtml(albumPayload.title)}" loading="lazy" />` : ""}
-      </button>
-      <div class="shelf-card-meta">
-        <button class="shelf-card-title js-open-album" type="button">${escapeHtml(albumPayload.title)}</button>
-        <button class="shelf-card-artist js-open-artist" type="button">${escapeHtml(albumPayload.artist)}${item.release_year ? ` · ${escapeHtml(item.release_year)}` : ""}</button>
-      </div>
-      ${noteText ? `<p class="shelf-card-note">“${noteText}”</p>` : ""}
-    `;
-
-    card.querySelectorAll(".js-open-album").forEach((el) => {
-      el.addEventListener("click", () => openAlbumDetail(albumPayload));
-    });
-    card.querySelector(".js-open-artist").addEventListener("click", () => {
-      openArtistDetail({ name: albumPayload.artist });
-    });
-
-    publicShelfGrid.appendChild(card);
+  ["listened", "want", "tbr"].forEach((k) => {
+    $(`public-count-${k}`).textContent = buckets[k].length;
+    $(`public-tab-${k}`).classList.toggle("active", activePublicShelfTab === k);
   });
+
+  const visible = buckets[activePublicShelfTab];
+  const grid = $("public-shelf-grid");
+  grid.innerHTML = "";
+  $("public-shelf-empty").classList.toggle("hidden", visible.length > 0);
+  visible.forEach((item) => grid.appendChild(createAlbumCard(item, { mode: "public" })));
 }
 
 // ------------------------------------------------------------
-// Onboarding Artist & Album Search Handlers
+// Onboarding Search Handlers (Artists & Non-Single Top 5 Albums)
 // ------------------------------------------------------------
 const handleOnboardingArtistSearch = debounce(async () => {
-  const term = artistSearchInput.value.trim();
-  if (term.length < 2) {
-    artistSearchResults.classList.add("hidden");
-    return;
-  }
+  const term = $("artist-search-input").value.trim();
+  const box = $("artist-search-results");
+  if (term.length < 2) return box.classList.add("hidden");
 
   const results = await queryItunes(term, "musicArtist", 6);
-  artistSearchResults.innerHTML = "";
-
-  if (results.length === 0) {
-    artistSearchResults.classList.add("hidden");
-    return;
-  }
-
+  box.innerHTML = "";
   const seen = new Set();
   results.forEach((item) => {
     if (!item.artistName || seen.has(item.artistName)) return;
     seen.add(item.artistName);
-
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "search-result-item clickable";
-    btn.innerHTML = `
-      <span class="search-item-text">
-        <span class="search-item-title">${escapeHtml(item.artistName)}</span>
-        <span class="search-item-sub">${escapeHtml(item.primaryGenreName || "Artist")}</span>
-      </span>
-    `;
+    btn.innerHTML = `<span class="search-item-text"><span class="search-item-title">${escapeHtml(item.artistName)}</span><span class="search-item-sub">${escapeHtml(item.primaryGenreName || "Artist")}</span></span>`;
     btn.addEventListener("click", () => {
-      if (!draftArtists.includes(item.artistName)) {
+      if (!draftArtists.some((a) => a.toLowerCase() === item.artistName.toLowerCase())) {
         draftArtists.push(item.artistName);
         refreshArtistChips();
       }
-      artistSearchInput.value = "";
-      artistSearchResults.classList.add("hidden");
+      $("artist-search-input").value = "";
+      box.classList.add("hidden");
     });
-    artistSearchResults.appendChild(btn);
+    box.appendChild(btn);
   });
-
-  artistSearchResults.classList.remove("hidden");
+  box.classList.toggle("hidden", !box.children.length);
 }, 280);
 
 const handleOnboardingAlbumSearch = debounce(async () => {
-  const term = albumSearchInput.value.trim();
-  if (term.length < 2) {
-    albumSearchResults.classList.add("hidden");
-    return;
-  }
+  const term = $("album-search-input").value.trim();
+  const box = $("album-search-results");
+  if (term.length < 2 || draftTopFive.length >= 5) return box.classList.add("hidden");
 
-  const results = await queryItunes(term, "album", 6);
-  albumSearchResults.innerHTML = "";
-
-  if (results.length === 0) {
-    albumSearchResults.classList.add("hidden");
-    return;
-  }
-
+  const results = await searchNonSingleAlbums(term, 6);
+  box.innerHTML = "";
   results.forEach((item) => {
-    if (!item.collectionName || !item.artistName) return;
-    const label = `${item.collectionName} — ${item.artistName}`;
-    const year = item.releaseDate ? item.releaseDate.slice(0, 4) : "";
-
+    const payload = toAlbumPayloadFromItunes(item);
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "search-result-item clickable";
@@ -2502,43 +1872,37 @@ const handleOnboardingAlbumSearch = debounce(async () => {
       <div class="search-result-left">
         <img class="search-thumb" src="${escapeHtml(item.artworkUrl100 || "")}" alt="" />
         <span class="search-item-text">
-          <span class="search-item-title">${escapeHtml(item.collectionName)}</span>
-          <span class="search-item-sub">${escapeHtml(item.artistName)}${year ? ` · ${year}` : ""}</span>
+          <span class="search-item-title">${escapeHtml(payload.title)}</span>
+          <span class="search-item-sub">${escapeHtml(payload.artist)}${payload.release_year ? ` · ${payload.release_year}` : ""}</span>
         </span>
-      </div>
-    `;
+      </div>`;
     btn.addEventListener("click", () => {
-      if (!draftAlbums.includes(label)) {
-        draftAlbums.push(label);
-        refreshAlbumChips();
+      if (draftTopFive.length < 5 && !draftTopFive.some((a) => a.album_id === payload.album_id)) {
+        draftTopFive.push(payload);
+        renderTopFiveEditor();
       }
-      albumSearchInput.value = "";
-      albumSearchResults.classList.add("hidden");
+      $("album-search-input").value = "";
+      box.classList.add("hidden");
     });
-    albumSearchResults.appendChild(btn);
+    box.appendChild(btn);
   });
-
-  albumSearchResults.classList.remove("hidden");
+  box.classList.toggle("hidden", !box.children.length);
 }, 280);
 
 // ------------------------------------------------------------
 // Event Listeners
 // ------------------------------------------------------------
-brandHomeBtn.addEventListener("click", () => {
-  if (sessionUser && userProfile?.tastes?.length) showStationView();
-});
+$("brand-home-btn").addEventListener("click", () => sessionUser && userProfile?.tastes?.length && showStationView());
+$("nav-station").addEventListener("click", () => showStationView());
+$("nav-shelf").addEventListener("click", () => showShelfView());
+$("nav-search").addEventListener("click", () => showSearchView(lastSearchQuery));
+$("nav-listeners").addEventListener("click", () => showListenersView());
+$("nav-profile").addEventListener("click", () => showAuthView("edit"));
 
-navStation.addEventListener("click", () => showStationView());
-navShelf.addEventListener("click", () => showShelfView());
-navSearch.addEventListener("click", () => showSearchView(lastSearchQuery));
-navListeners.addEventListener("click", () => showListenersView());
-navProfile.addEventListener("click", () => showAuthView("edit"));
-
-modeSigninBtn.addEventListener("click", () => setAuthMode("signin"));
-modeSignupBtn.addEventListener("click", () => setAuthMode("signup"));
-cancelAuthBtn.addEventListener("click", () => showStationView());
-
-signOutBtn.addEventListener("click", async () => {
+$("mode-signin").addEventListener("click", () => setAuthMode("signin"));
+$("mode-signup").addEventListener("click", () => setAuthMode("signup"));
+$("cancel-auth-btn").addEventListener("click", () => showStationView());
+$("sign-out-btn").addEventListener("click", async () => {
   stopPreview();
   await sb.auth.signOut();
   sessionUser = null;
@@ -2546,236 +1910,138 @@ signOutBtn.addEventListener("click", async () => {
   showAuthView("signin");
 });
 
-stationCoverBtn.addEventListener("click", openCurrentStationAlbumDetail);
-stationTitleEl.addEventListener("click", openCurrentStationAlbumDetail);
-stationOpenDetailsBtn.addEventListener("click", openCurrentStationAlbumDetail);
-stationArtistBtn.addEventListener("click", () => {
-  if (currentAlbum) {
-    openArtistDetail({
-      artistId: currentAlbum.artistId || null,
-      name: currentAlbum.artist
-    });
-  }
+// Station triggers
+[$("station-cover-btn"), $("album-title"), $("station-open-details-btn")].forEach((el) =>
+  el.addEventListener("click", openStationAlbumDetail)
+);
+$("album-artist").addEventListener("click", () => currentAlbum && openArtistDetail({ artistId: currentAlbum.artistId, name: currentAlbum.artist }));
+
+$("want-btn").addEventListener("click", () => {
+  const next = !(currentInteraction.saved && !currentInteraction.listened);
+  saveStationInteraction({ saved: next, listened: next ? false : currentInteraction.listened });
 });
-
-albumDetailBack.addEventListener("click", goBack);
-artistDetailBack.addEventListener("click", goBack);
-
-detailPreviewBtn.addEventListener("click", () => {
-  if (activePreviewTrack && !previewAudio.paused) {
-    stopPreview();
-  } else if (defaultPreviewTrack) {
-    togglePreviewTrack(defaultPreviewTrack);
-  }
+$("listened-btn").addEventListener("click", () => {
+  const next = !currentInteraction.listened;
+  saveStationInteraction({ listened: next, saved: next ? false : currentInteraction.saved });
 });
-
-detailAlbumArtistBtn.addEventListener("click", () => {
-  if (activeDetailAlbum) {
-    openArtistDetail({
-      artistId: activeDetailAlbum.artistId,
-      name: activeDetailAlbum.artist
-    });
-  }
-});
-
-detailWantBtn.addEventListener("click", () => {
-  const nextSaved = !activeDetailInteraction.saved;
-  saveDetailInteraction({
-    saved: nextSaved,
-    listened: nextSaved ? false : activeDetailInteraction.listened
-  });
-});
-
-detailListenedBtn.addEventListener("click", () => {
-  const nextListened = !activeDetailInteraction.listened;
-  saveDetailInteraction({
-    listened: nextListened,
-    saved: nextListened ? false : activeDetailInteraction.saved
-  });
-});
-
-detailNoteForm.addEventListener("submit", async (e) => {
+$("personal-note-form").addEventListener("submit", async (e) => {
   e.preventDefault();
-  detailNoteStatus.textContent = "Saving...";
-  const hasShelfStatus = activeDetailInteraction.saved || activeDetailInteraction.listened;
-  await saveDetailInteraction({
-    positive_note: detailNoteInput.value.trim(),
-    listened: hasShelfStatus ? activeDetailInteraction.listened : true
-  });
-  detailNoteStatus.textContent = "Saved";
-  const communityNotes = await loadCommunityNotes(activeDetailAlbum.album_id);
-  renderDetailNotes(activeDetailAlbum.reviews, communityNotes);
+  $("note-status").textContent = "Saving...";
+  const hasShelf = currentInteraction.saved || currentInteraction.listened;
+  await saveStationInteraction({ positive_note: $("personal-note-input").value.trim(), listened: hasShelf ? currentInteraction.listened : true });
+  $("note-status").textContent = "Saved";
+  renderNotes($("reviews-list"), $("review-source-note"), currentAlbum.reviews, await loadCommunityNotes(currentAlbum.id));
 });
 
-detailArtistFavBtn.addEventListener("click", async () => {
+// Album & Artist Detail triggers
+$("album-detail-back").addEventListener("click", goBack);
+$("artist-detail-back").addEventListener("click", goBack);
+$("detail-preview-btn").addEventListener("click", () =>
+  activePreviewTrack && !previewAudio.paused ? stopPreview() : defaultPreviewTrack && togglePreviewTrack(defaultPreviewTrack)
+);
+$("detail-album-artist-btn").addEventListener("click", () =>
+  activeDetailAlbum && openArtistDetail({ artistId: activeDetailAlbum.artistId, name: activeDetailAlbum.artist })
+);
+
+$("detail-want-btn").addEventListener("click", () => {
+  const on = Boolean(activeDetailInteraction.saved && !activeDetailInteraction.listened && !isItemTbr(activeDetailInteraction));
+  saveDetailInteraction({ saved: !on, listened: false, is_tbr: false });
+});
+$("detail-tbr-btn").addEventListener("click", () => {
+  const on = isItemTbr(activeDetailInteraction);
+  saveDetailInteraction({ is_tbr: !on, saved: !on, listened: false });
+});
+$("detail-listened-btn").addEventListener("click", () => {
+  saveDetailInteraction({ listened: !activeDetailInteraction.listened, saved: false, is_tbr: false });
+});
+$("detail-note-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  $("detail-note-status").textContent = "Saving...";
+  const hasShelf = activeDetailInteraction.saved || activeDetailInteraction.listened || activeDetailInteraction.is_tbr;
+  await saveDetailInteraction({ positive_note: $("detail-note-input").value.trim(), listened: hasShelf ? activeDetailInteraction.listened : true });
+  $("detail-note-status").textContent = "Saved";
+  renderNotes($("detail-notes-list"), $("detail-notes-count"), activeDetailAlbum.reviews, await loadCommunityNotes(activeDetailAlbum.album_id));
+});
+
+$("detail-artist-fav-btn").addEventListener("click", async () => {
   if (!activeDetailArtist || !userProfile) return;
-  const currentFavs = userProfile.favorite_artists || [];
-  const exists = currentFavs.some(
-    (a) => a.toLowerCase() === activeDetailArtist.name.toLowerCase()
-  );
-  const nextFavs = exists
-    ? currentFavs.filter((a) => a.toLowerCase() !== activeDetailArtist.name.toLowerCase())
-    : [...currentFavs, activeDetailArtist.name];
-
-  userProfile = await upsertUserProfile({
-    user_id: sessionUser.id,
-    display_name: userProfile.display_name,
-    bio: userProfile.bio || "",
-    avatar_url: userProfile.avatar_url || "",
-    tastes: userProfile.tastes || [],
-    favorite_artists: nextFavs,
-    favorite_albums: userProfile.favorite_albums || []
-  });
-  updateFavoriteArtistButton();
+  const favs = userProfile.favorite_artists || [];
+  const exists = favs.some((a) => a.toLowerCase() === activeDetailArtist.name.toLowerCase());
+  const next = exists ? favs.filter((a) => a.toLowerCase() !== activeDetailArtist.name.toLowerCase()) : [...favs, activeDetailArtist.name];
+  await saveProfilePatch({ favorite_artists: next });
+  updateFavArtistBtn();
 });
 
-nameInput.addEventListener("input", () => {
-  if (!draftAvatarUrl) updateAvatarPreview();
-});
-
-avatarFileInput.addEventListener("change", async (e) => {
+// Profile Avatar & Form
+$("name-input").addEventListener("input", () => !draftAvatarUrl && updateAvatarPreview());
+$("avatar-file-input").addEventListener("change", async (e) => {
   const file = e.target.files?.[0];
   if (!file) return;
   try {
     draftAvatarUrl = await processAvatarFile(file);
     updateAvatarPreview();
   } catch (err) {
-    authFeedback.textContent = err.message;
-    authFeedback.classList.remove("hidden");
+    $("auth-feedback").textContent = err.message;
+    $("auth-feedback").classList.remove("hidden");
   }
-  avatarFileInput.value = "";
+  e.target.value = "";
 });
+$("remove-avatar-btn").addEventListener("click", () => { draftAvatarUrl = ""; updateAvatarPreview(); });
 
-removeAvatarBtn.addEventListener("click", () => {
-  draftAvatarUrl = "";
-  updateAvatarPreview();
-});
-
-artistSearchInput.addEventListener("input", handleOnboardingArtistSearch);
-albumSearchInput.addEventListener("input", handleOnboardingAlbumSearch);
-
-shelfAlbumSearch.addEventListener(
-  "input",
-  debounce(() => {
-    populateAlbumDropdown(shelfAlbumSearch.value.trim(), shelfSearchResults, () => {
-      shelfAlbumSearch.value = "";
-      shelfSearchResults.classList.add("hidden");
-    });
-  }, 280)
-);
-
-shelfAlbumSearch.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") {
-    e.preventDefault();
-    const q = shelfAlbumSearch.value.trim();
-    shelfSearchResults.classList.add("hidden");
-    if (q) showSearchView(q, false);
-  }
-});
-
-globalSearchInput.addEventListener(
-  "input",
-  debounce(() => {
-    populateAlbumDropdown(globalSearchInput.value.trim(), globalSearchDropdown, () => {
-      globalSearchDropdown.classList.add("hidden");
-    });
-  }, 280)
-);
-
-globalSearchForm.addEventListener("submit", (e) => {
+$("artist-search-input").addEventListener("input", handleOnboardingArtistSearch);
+$("album-search-input").addEventListener("input", handleOnboardingAlbumSearch);
+$("artist-search-input").addEventListener("keydown", (e) => {
+  if (e.key !== "Enter") return;
   e.preventDefault();
-  const q = globalSearchInput.value.trim();
-  if (q) runFullSearch(q);
-});
-
-userSearchInput.addEventListener(
-  "input",
-  debounce(() => renderListenersDirectory(userSearchInput.value), 250)
-);
-
-artistSearchInput.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") {
-    e.preventDefault();
-    const val = artistSearchInput.value.trim();
-    if (val && !draftArtists.includes(val)) {
-      draftArtists.push(val);
-      refreshArtistChips();
-      artistSearchInput.value = "";
-      artistSearchResults.classList.add("hidden");
-    }
+  const val = e.target.value.trim();
+  if (val && !draftArtists.some((a) => a.toLowerCase() === val.toLowerCase())) {
+    draftArtists.push(val);
+    refreshArtistChips();
   }
+  e.target.value = "";
+  $("artist-search-results").classList.add("hidden");
 });
 
-document.addEventListener("click", (e) => {
-  if (!e.target.closest("#artists-fieldset")) artistSearchResults.classList.add("hidden");
-  if (!e.target.closest("#albums-fieldset")) albumSearchResults.classList.add("hidden");
-  if (!e.target.closest("#shelf-view .search-box")) shelfSearchResults.classList.add("hidden");
-  if (!e.target.closest("#global-search-form")) globalSearchDropdown.classList.add("hidden");
-});
-
-authForm.addEventListener("submit", async (e) => {
+$("auth-form").addEventListener("submit", async (e) => {
   e.preventDefault();
-  authFeedback.classList.add("hidden");
+  const fb = $("auth-feedback");
+  fb.classList.add("hidden");
 
   try {
-    if (authMode === "edit") {
-      const displayName = nameInput.value.trim();
-      const tastes = Array.from(
-        tasteOptionsContainer.querySelectorAll(".taste-chip.selected")
-      ).map((chip) => chip.textContent);
-
-      if (!displayName || tastes.length === 0) {
-        authFeedback.textContent = "Enter your name and pick at least one style.";
-        authFeedback.classList.remove("hidden");
-        return;
-      }
-
-      userProfile = await upsertUserProfile({
-        user_id: sessionUser.id,
-        display_name: displayName,
-        bio: bioInput.value.trim(),
+    const profilePayload = () => {
+      const display_name = $("name-input").value.trim();
+      const tastes = Array.from($("taste-options").querySelectorAll(".taste-chip.selected")).map((c) => c.textContent);
+      if (!display_name || !tastes.length) throw new Error("Please enter your name and pick at least one genre.");
+      return {
+        display_name,
+        bio: $("bio-input").value.trim(),
         avatar_url: draftAvatarUrl,
         tastes,
         favorite_artists: draftArtists,
-        favorite_albums: draftAlbums
-      });
-      showStationView();
-      return;
+        favorite_albums: draftTopFive.map((a) => `${a.title} — ${a.artist}`),
+        top_five_albums: draftTopFive
+      };
+    };
+
+    if (authMode === "edit") {
+      await saveProfilePatch(profilePayload());
+      return showStationView();
     }
 
-    const email = emailInput.value.trim();
-    const password = passwordInput.value;
+    const email = $("email-input").value.trim();
+    const password = $("password-input").value;
 
     if (authMode === "signup") {
-      const displayName = nameInput.value.trim();
-      const tastes = Array.from(
-        tasteOptionsContainer.querySelectorAll(".taste-chip.selected")
-      ).map((chip) => chip.textContent);
-
-      if (!displayName || tastes.length === 0) {
-        authFeedback.textContent = "Please enter your name and select at least one style.";
-        authFeedback.classList.remove("hidden");
-        return;
-      }
-
+      const draft = profilePayload();
       const { data, error } = await sb.auth.signUp({ email, password });
       if (error) throw error;
-
       if (data.user && data.session) {
         sessionUser = data.user;
-        userProfile = await upsertUserProfile({
-          user_id: data.user.id,
-          display_name: displayName,
-          bio: bioInput.value.trim(),
-          avatar_url: draftAvatarUrl,
-          tastes,
-          favorite_artists: draftArtists,
-          favorite_albums: draftAlbums
-        });
+        userProfile = await upsertUserProfile({ user_id: data.user.id, ...draft });
         showStationView();
       } else {
-        authFeedback.textContent = "Check your inbox to confirm your email, then sign in.";
-        authFeedback.classList.remove("hidden");
+        fb.textContent = "Check your inbox to confirm your email, then sign in.";
+        fb.classList.remove("hidden");
       }
     } else {
       const { data, error } = await sb.auth.signInWithPassword({ email, password });
@@ -2785,87 +2051,104 @@ authForm.addEventListener("submit", async (e) => {
       showStationView();
     }
   } catch (err) {
-    authFeedback.textContent = err.message || "Authentication error.";
-    authFeedback.classList.remove("hidden");
+    fb.textContent = err.message || "Authentication error.";
+    fb.classList.remove("hidden");
   }
 });
 
-// Station Actions
-wantBtn.addEventListener("click", () => {
-  const nextSaved = !currentInteraction.saved;
-  saveStationInteraction({
-    saved: nextSaved,
-    listened: nextSaved ? false : currentInteraction.listened
+// Shelf, Search & Listeners
+$("shelf-album-search").addEventListener("input", debounce(() => {
+  populateAlbumDropdown($("shelf-album-search").value.trim(), $("shelf-search-results"), () => {
+    $("shelf-album-search").value = "";
+    $("shelf-search-results").classList.add("hidden");
   });
+}, 280));
+$("shelf-album-search").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    const q = e.target.value.trim();
+    $("shelf-search-results").classList.add("hidden");
+    if (q) showSearchView(q, false);
+  }
 });
 
-listenedBtn.addEventListener("click", () => {
-  const nextListened = !currentInteraction.listened;
-  saveStationInteraction({
-    listened: nextListened,
-    saved: nextListened ? false : currentInteraction.saved
-  });
-});
-
-personalNoteForm.addEventListener("submit", async (e) => {
+$("global-search-input").addEventListener("input", debounce(() => {
+  populateAlbumDropdown($("global-search-input").value.trim(), $("global-search-dropdown"), () =>
+    $("global-search-dropdown").classList.add("hidden")
+  );
+}, 280));
+$("global-search-form").addEventListener("submit", (e) => {
   e.preventDefault();
-  noteStatus.textContent = "Saving...";
-  const hasShelfStatus = currentInteraction.saved || currentInteraction.listened;
-  await saveStationInteraction({
-    positive_note: personalNoteInput.value.trim(),
-    listened: hasShelfStatus ? currentInteraction.listened : true
+  const q = $("global-search-input").value.trim();
+  if (q) runFullSearch(q);
+});
+$("user-search-input").addEventListener("input", debounce(() => renderListenersDirectory($("user-search-input").value), 250));
+
+document.addEventListener("click", (e) => {
+  if (!e.target.closest("#artists-fieldset")) $("artist-search-results").classList.add("hidden");
+  if (!e.target.closest("#albums-fieldset")) $("album-search-results").classList.add("hidden");
+  if (!e.target.closest("#shelf-view .search-box")) $("shelf-search-results").classList.add("hidden");
+  if (!e.target.closest("#global-search-form")) $("global-search-dropdown").classList.add("hidden");
+});
+
+["want", "tbr", "listened"].forEach((tab) => {
+  $(`tab-${tab}`).addEventListener("click", () => { activeShelfTab = tab; renderShelf(); });
+  $(`public-tab-${tab}`).addEventListener("click", () => { activePublicShelfTab = tab; renderPublicShelf(); });
+});
+
+$("shelf-sort-select").addEventListener("change", () => {
+  activeShelfSort = $("shelf-sort-select").value;
+  renderShelf();
+  if (activeShelfSort === "popularity") backfillPopularityIfNeeded();
+});
+
+$("tbr-toggle-form-btn").addEventListener("click", () => {
+  $("tbr-manual-form").classList.toggle("hidden");
+  if (!$("tbr-manual-form").classList.contains("hidden")) $("tbr-title-input").focus();
+});
+$("tbr-cancel-btn").addEventListener("click", () => {
+  $("tbr-manual-form").classList.add("hidden");
+  $("tbr-manual-form").reset();
+});
+$("tbr-manual-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const title = $("tbr-title-input").value.trim();
+  const artist = $("tbr-artist-input").value.trim();
+  const release_date = $("tbr-date-input").value || null;
+  if (!title || !artist) return;
+
+  const slug = `${artist}-${title}`.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  await upsertAlbumOnShelf({
+    album_id: `tbr-${slug}-${Date.now()}`,
+    title,
+    artist,
+    cover_url: "",
+    release_year: release_date ? release_date.slice(0, 4) : "",
+    release_date,
+    saved: true,
+    listened: false,
+    is_tbr: true
   });
-  noteStatus.textContent = "Saved";
-  const communityNotes = await loadCommunityNotes(currentAlbum.id);
-  renderStationReviews(currentAlbum.reviews, communityNotes);
-});
-
-// Shelf Tabs
-tabWant.addEventListener("click", () => {
-  activeShelfTab = "want";
+  e.target.reset();
+  e.target.classList.add("hidden");
+  shelfItems = await loadUserShelf(sessionUser.id);
   renderShelf();
 });
 
-tabListened.addEventListener("click", () => {
-  activeShelfTab = "listened";
-  renderShelf();
+$("back-to-listeners-btn").addEventListener("click", () => {
+  if (viewHistory.length) return goBack();
+  $("public-profile-view").classList.add("hidden");
+  $("listeners-directory").classList.remove("hidden");
 });
 
-// Public Profile Navigation & Tabs
-backToListenersBtn.addEventListener("click", () => {
-  if (viewHistory.length > 0) {
-    goBack();
-  } else {
-    publicProfileView.classList.add("hidden");
-    listenersDirectory.classList.remove("hidden");
-  }
-});
+$("sim-prev-day").addEventListener("click", () => { dayOffset -= 1; showStationView(); });
+$("sim-next-day").addEventListener("click", () => { dayOffset += 1; showStationView(); });
 
-publicTabListened.addEventListener("click", () => {
-  activePublicShelfTab = "listened";
-  renderPublicShelf();
-});
-
-publicTabWant.addEventListener("click", () => {
-  activePublicShelfTab = "want";
-  renderPublicShelf();
-});
-
-// Dev Day Switcher
-document.getElementById("sim-prev-day").addEventListener("click", () => {
-  dayOffset -= 1;
-  showStationView();
-});
-
-document.getElementById("sim-next-day").addEventListener("click", () => {
-  dayOffset += 1;
-  showStationView();
-});
-
+// ------------------------------------------------------------
 // Boot
+// ------------------------------------------------------------
 (async function init() {
-  currentDateLabel.textContent = formatDisplayDate(getActiveDate());
-
+  $("current-date-label").textContent = formatDisplayDate(getActiveDate());
   try {
     const { data } = await sb.auth.getSession();
     if (data?.session?.user) {

@@ -12,7 +12,13 @@
 <body>
   <header class="site-header">
     <div class="brand">
-      <span class="accent-dot" aria-hidden="true"></span>
+      <svg class="vinyl-mark" viewBox="0 0 28 28" aria-hidden="true">
+        <circle cx="14" cy="14" r="12.5" fill="none" stroke="currentColor" stroke-width="1.35" />
+        <circle cx="14" cy="14" r="9.2" fill="none" stroke="currentColor" stroke-width="0.65" opacity="0.38" />
+        <circle cx="14" cy="14" r="6.8" fill="none" stroke="currentColor" stroke-width="0.65" opacity="0.25" />
+        <circle cx="14" cy="14" r="4.2" fill="var(--accent)" />
+        <circle cx="14" cy="14" r="1.2" fill="var(--bg-page)" />
+      </svg>
       <button id="brand-home-btn" class="brand-name-btn" type="button">RECOMMENTATION STATION</button>
     </div>
 
@@ -37,7 +43,7 @@
       <p id="auth-eyebrow" class="eyebrow">Station Access</p>
       <h1 id="auth-heading" class="auth-title">Tune your daily <span class="editorial-accent">selection</span>.</h1>
       <p id="auth-copy" class="auth-copy">
-        One album a day, matched to what you gravitate toward. No scores, no star ratings—just music and notes from listeners who loved it.
+        One album a day, matched to what you gravitate toward. No scores, no star ratings—just music and notes from listeners.
       </p>
 
       <div id="auth-mode-switch" class="auth-mode-switch" role="tablist">
@@ -79,7 +85,7 @@
         </label>
 
         <fieldset id="tastes-fieldset" class="field-group">
-          <legend class="field-label">1. Styles &amp; atmospheres you lean toward (pick at least one)</legend>
+          <legend class="field-label">1. Genres you lean toward (pick at least one)</legend>
           <div id="taste-options" class="taste-grid"></div>
         </fieldset>
 
@@ -89,7 +95,7 @@
             <input
               id="artist-search-input"
               type="text"
-              placeholder="Search an artist (e.g. Radiohead, Nils Frahm, Björk)..."
+              placeholder="Search an artist (e.g. Capitão Fausto, Radiohead, Björk)..."
               autocomplete="off"
             />
             <div id="artist-search-results" class="search-results hidden"></div>
@@ -98,17 +104,19 @@
         </fieldset>
 
         <fieldset id="albums-fieldset" class="field-group hidden">
-          <legend class="field-label">3. Essential albums you already love (optional)</legend>
+          <legend class="field-label">
+            3. Your Top 5 Favorite Albums — shown on your public profile (<span id="top-five-count">0/5</span>)
+          </legend>
           <div class="search-box">
             <input
               id="album-search-input"
               type="text"
-              placeholder="Search an album (e.g. In Rainbows, Blonde, Kind of Blue)..."
+              placeholder="Search an album to add to your Top 5..."
               autocomplete="off"
             />
             <div id="album-search-results" class="search-results hidden"></div>
           </div>
-          <div id="selected-albums" class="selected-chips"></div>
+          <div id="top-five-editor-grid" class="top-five-grid"></div>
         </fieldset>
 
         <p id="auth-feedback" class="feedback-msg hidden" role="status"></p>
@@ -130,9 +138,22 @@
 
     <article class="album-showcase">
       <div class="artwork-column">
-        <button id="station-cover-btn" class="artwork-frame clickable-frame" type="button" aria-label="Open album details">
-          <img id="album-cover" src="" alt="" />
-        </button>
+        <div class="vinyl-stage">
+          <svg class="vinyl-disc" viewBox="0 0 200 200" aria-hidden="true">
+            <circle cx="100" cy="100" r="98" fill="#181817" stroke="rgba(255,255,255,0.12)" stroke-width="1.5" />
+            <circle cx="100" cy="100" r="84" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="1" />
+            <circle cx="100" cy="100" r="70" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="1" />
+            <circle cx="100" cy="100" r="56" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="1" />
+            <circle cx="100" cy="100" r="42" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="1" />
+            <circle cx="100" cy="100" r="32" fill="var(--accent)" />
+            <circle cx="100" cy="100" r="24" fill="none" stroke="rgba(255,255,255,0.28)" stroke-width="0.8" />
+            <circle cx="100" cy="100" r="5" fill="#111110" />
+          </svg>
+          <button id="station-cover-btn" class="artwork-frame clickable-frame" type="button" aria-label="Open album details">
+            <img id="album-cover" src="" alt="" />
+          </button>
+        </div>
+
         <dl class="album-specs">
           <div>
             <dt>Released</dt>
@@ -166,17 +187,17 @@
 
         <section class="reviews-section" aria-label="Listener notes">
           <div class="reviews-header">
-            <h2 class="section-heading">Why people love it</h2>
+            <h2 class="section-heading">Listener notes</h2>
             <span id="review-source-note" class="meta-label"></span>
           </div>
           <div id="reviews-list" class="reviews-list"></div>
 
           <form id="personal-note-form" class="personal-note-box">
-            <label for="personal-note-input" class="field-label">Your positive note</label>
+            <label for="personal-note-input" class="field-label">Your note</label>
             <textarea
               id="personal-note-input"
               rows="2"
-              placeholder="Write what stood out to you—no scores, just impressions..."
+              placeholder="Write your thoughts on this album—no scores, just impressions..."
             ></textarea>
             <div class="note-actions">
               <button type="submit" class="text-btn">Save note</button>
@@ -208,9 +229,40 @@
       </div>
     </div>
 
-    <div class="shelf-tabs" role="tablist">
-      <button id="tab-want" class="mode-tab active" type="button">Want to listen <span id="count-want" class="tab-count">0</span></button>
-      <button id="tab-listened" class="mode-tab" type="button">Listened <span id="count-listened" class="tab-count">0</span></button>
+    <div class="shelf-toolbar">
+      <div class="shelf-tabs" role="tablist">
+        <button id="tab-want" class="mode-tab active" type="button">Want to listen <span id="count-want" class="tab-count">0</span></button>
+        <button id="tab-tbr" class="mode-tab" type="button">TBR <span id="count-tbr" class="tab-count">0</span></button>
+        <button id="tab-listened" class="mode-tab" type="button">Listened <span id="count-listened" class="tab-count">0</span></button>
+      </div>
+
+      <div class="shelf-sort-wrap">
+        <label for="shelf-sort-select" class="meta-label">Sort by</label>
+        <select id="shelf-sort-select" class="sort-select">
+          <option value="recent">Recently added</option>
+          <option value="year-desc">Release year (Newest)</option>
+          <option value="year-asc">Release year (Oldest)</option>
+          <option value="popularity">Popularity</option>
+          <option value="title">Title (A–Z)</option>
+          <option value="artist">Artist (A–Z)</option>
+        </select>
+      </div>
+    </div>
+
+    <div id="tbr-manual-bar" class="tbr-bar hidden">
+      <div class="tbr-bar-head">
+        <span class="meta-label">Upcoming albums (To Be Released) — future releases added to your shelf appear here automatically.</span>
+        <button id="tbr-toggle-form-btn" class="text-btn" type="button">+ Add unreleased album manually</button>
+      </div>
+      <form id="tbr-manual-form" class="tbr-manual-form hidden">
+        <input id="tbr-title-input" type="text" placeholder="Album title" required />
+        <input id="tbr-artist-input" type="text" placeholder="Artist" required />
+        <input id="tbr-date-input" type="date" aria-label="Expected release date" />
+        <div class="tbr-form-actions">
+          <button type="submit" class="primary-btn tbr-save-btn">Add to TBR</button>
+          <button id="tbr-cancel-btn" type="button" class="text-btn">Cancel</button>
+        </div>
+      </form>
     </div>
 
     <div id="shelf-grid" class="shelf-grid"></div>
@@ -294,9 +346,17 @@
         </div>
       </div>
 
+      <div id="public-top-five-section" class="public-top-five hidden">
+        <div class="reviews-header">
+          <h2 class="section-heading">Top 5 Favorite Albums</h2>
+        </div>
+        <div id="public-top-five-grid" class="top-five-grid"></div>
+      </div>
+
       <div class="shelf-tabs" role="tablist">
         <button id="public-tab-listened" class="mode-tab active" type="button">Listened <span id="public-count-listened" class="tab-count">0</span></button>
         <button id="public-tab-want" class="mode-tab" type="button">Want to listen <span id="public-count-want" class="tab-count">0</span></button>
+        <button id="public-tab-tbr" class="mode-tab" type="button">TBR <span id="public-count-tbr" class="tab-count">0</span></button>
       </div>
 
       <div id="public-shelf-grid" class="shelf-grid"></div>
@@ -310,9 +370,22 @@
 
     <article class="album-showcase">
       <div class="artwork-column">
-        <div class="artwork-frame">
-          <img id="detail-album-cover" src="" alt="" />
+        <div id="detail-vinyl-stage" class="vinyl-stage">
+          <svg class="vinyl-disc" viewBox="0 0 200 200" aria-hidden="true">
+            <circle cx="100" cy="100" r="98" fill="#181817" stroke="rgba(255,255,255,0.12)" stroke-width="1.5" />
+            <circle cx="100" cy="100" r="84" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="1" />
+            <circle cx="100" cy="100" r="70" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="1" />
+            <circle cx="100" cy="100" r="56" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="1" />
+            <circle cx="100" cy="100" r="42" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="1" />
+            <circle cx="100" cy="100" r="32" fill="var(--accent)" />
+            <circle cx="100" cy="100" r="24" fill="none" stroke="rgba(255,255,255,0.28)" stroke-width="0.8" />
+            <circle cx="100" cy="100" r="5" fill="#111110" />
+          </svg>
+          <div class="artwork-frame">
+            <img id="detail-album-cover" src="" alt="" />
+          </div>
         </div>
+
         <dl class="album-specs">
           <div>
             <dt>Released</dt>
@@ -330,12 +403,17 @@
 
         <div class="interaction-bar" aria-label="Shelf actions">
           <button id="detail-want-btn" class="taste-chip" type="button">Want to listen</button>
+          <button id="detail-tbr-btn" class="taste-chip" type="button">TBR</button>
           <button id="detail-listened-btn" class="taste-chip" type="button">Listened</button>
         </div>
 
-        <!-- Mini Audio Preview Player -->
         <div id="detail-preview-wrap" class="preview-wrap hidden">
           <button id="detail-preview-btn" class="preview-btn" type="button" aria-label="Play track preview">
+            <svg class="preview-vinyl-icon" viewBox="0 0 20 20" aria-hidden="true">
+              <circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" stroke-width="1.3" />
+              <circle cx="10" cy="10" r="5.3" fill="none" stroke="currentColor" stroke-width="0.7" opacity="0.45" />
+              <circle cx="10" cy="10" r="2.6" fill="currentColor" />
+            </svg>
             <span id="detail-preview-icon" class="preview-icon" aria-hidden="true">▶</span>
             <span id="detail-preview-text" class="preview-text">Preview</span>
           </button>
@@ -362,17 +440,17 @@
 
         <section class="reviews-section" aria-label="Listener notes">
           <div class="reviews-header">
-            <h2 class="section-heading">Why people love it</h2>
+            <h2 class="section-heading">Listener notes</h2>
             <span id="detail-notes-count" class="meta-label"></span>
           </div>
           <div id="detail-notes-list" class="reviews-list"></div>
 
           <form id="detail-note-form" class="personal-note-box">
-            <label for="detail-note-input" class="field-label">Your positive note</label>
+            <label for="detail-note-input" class="field-label">Your note</label>
             <textarea
               id="detail-note-input"
               rows="2"
-              placeholder="Write what stood out to you—no scores, just impressions..."
+              placeholder="Write your thoughts on this album—no scores, just impressions..."
             ></textarea>
             <div class="note-actions">
               <button type="submit" class="text-btn">Save note</button>
@@ -396,7 +474,6 @@
       <button id="detail-artist-fav-btn" class="taste-chip" type="button">+ Favorite artist</button>
     </div>
 
-    <!-- LPs Section (Always First) -->
     <div id="artist-lps-section" class="artist-release-section hidden">
       <div class="reviews-header">
         <h2 class="section-heading">LPs</h2>
@@ -405,7 +482,6 @@
       <div id="artist-lps-grid" class="shelf-grid"></div>
     </div>
 
-    <!-- EPs Section (Second) -->
     <div id="artist-eps-section" class="artist-release-section hidden">
       <div class="reviews-header">
         <h2 class="section-heading">EPs</h2>
