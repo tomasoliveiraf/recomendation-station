@@ -17,7 +17,7 @@
 
   /* Layout */
   --max-width: 1080px;
-  --gutter: clamp(1.25rem, 4vw, 3rem);
+  --gutter: clamp(1.1rem, 4vw, 3rem);
 }
 
 /* Light Mode Override */
@@ -472,10 +472,22 @@ textarea:focus {
   color: var(--accent-ink);
 }
 
+.icon-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.42rem;
+}
+
+.btn-icon {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+}
+
 /* Top 5 Favorite Albums Grid */
 .top-five-grid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 0.85rem;
   margin-top: 0.35rem;
 }
@@ -485,9 +497,11 @@ textarea:focus {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
+  min-width: 0;
 }
 
 .top-five-cover {
+  position: relative;
   width: 100%;
   aspect-ratio: 1 / 1;
   background-color: var(--bg-surface);
@@ -515,6 +529,8 @@ textarea:focus {
 }
 
 .top-five-cover img {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -530,6 +546,7 @@ textarea:focus {
   position: absolute;
   top: 5px;
   right: 5px;
+  z-index: 2;
   width: 22px;
   height: 22px;
   border-radius: 50%;
@@ -762,6 +779,7 @@ textarea:focus {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
+  gap: 0.75rem;
   margin-bottom: 2.25rem;
 }
 
@@ -1001,6 +1019,42 @@ textarea:focus {
   max-width: 58ch;
 }
 
+/* Home Discovery Sections (Popular Right Now + Among Listeners) */
+.home-discovery-section {
+  margin-top: 3.75rem;
+  padding-top: 2.25rem;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.discovery-heading {
+  margin: 0.25rem 0 0;
+  font-size: clamp(1.35rem, 2.4vw, 1.8rem);
+  font-weight: 500;
+  line-height: 1.15;
+  letter-spacing: -0.015em;
+}
+
+.discovery-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 1.5rem 1.15rem;
+}
+
+.discovery-grid .shelf-card-title {
+  font-size: 0.88rem;
+}
+
+.discovery-grid .shelf-card-artist {
+  font-size: 0.78rem;
+}
+
+.listener-count-tag {
+  font-family: var(--font-modular);
+  font-size: 0.69rem;
+  color: var(--accent);
+  margin-top: 0.12rem;
+}
+
 /* Compact Tracklist on Album Detail Page */
 .tracklist-section {
   margin-top: 1.75rem;
@@ -1075,6 +1129,7 @@ textarea:focus {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
+  gap: 0.75rem;
   margin-bottom: 1.1rem;
 }
 
@@ -1211,7 +1266,7 @@ textarea:focus {
 .shelf-card {
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
+  gap: 0.55rem;
 }
 
 .shelf-cover-wrap {
@@ -1248,11 +1303,11 @@ textarea:focus {
   display: block;
 }
 
-/* Cover Hover Quick Actions (Search & Artist Pages) */
+/* Cover Hover Quick Actions (Search, Artist & Home Discovery) */
 .cover-hover-actions {
   position: absolute;
   inset: auto 0 0 0;
-  padding: 1.6rem 0.55rem 0.55rem;
+  padding: 1.6rem 0.5rem 0.5rem;
   background: linear-gradient(to top, rgba(14, 14, 13, 0.92) 0%, rgba(14, 14, 13, 0.55) 60%, transparent 100%);
   display: flex;
   gap: 0.35rem;
@@ -1268,12 +1323,12 @@ textarea:focus {
 
 .cover-action-btn {
   flex: 1;
-  padding: 0.36rem 0.4rem;
+  padding: 0.34rem 0.35rem;
   border: 1px solid rgba(242, 240, 234, 0.32);
   background: rgba(17, 17, 16, 0.82);
   color: #f2f0ea;
   font: inherit;
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   font-weight: 500;
   white-space: nowrap;
   cursor: pointer;
@@ -1480,26 +1535,515 @@ textarea:focus {
   margin-top: 0.85rem;
 }
 
+/* Lists, Annual Top 10 Badges & Add-to-List Picker */
+.lists-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.annual-prompt-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 1.1rem 1.25rem;
+  border: 1px solid var(--accent);
+  background-color: var(--bg-surface);
+}
+
+.annual-prompt-left {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+}
+
+.annual-icon-badge {
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.annual-icon-badge svg {
+  width: 20px;
+  height: 20px;
+}
+
+.annual-prompt-title {
+  margin: 0;
+  font-size: 0.96rem;
+  font-weight: 600;
+}
+
+.annual-prompt-copy {
+  margin: 0.15rem 0 0;
+  font-size: 0.8rem;
+  color: var(--ink-secondary);
+}
+
+.lists-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.new-list-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 0.6rem;
+  align-items: center;
+  padding: 1rem;
+  border: 1px solid var(--border-subtle);
+  background-color: var(--bg-surface);
+}
+
+.lists-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(235px, 1fr));
+  gap: 1.35rem;
+}
+
+.list-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  padding: 0.9rem;
+  border: 1px solid var(--border-subtle);
+  background: transparent;
+  text-align: left;
+  font: inherit;
+  color: var(--ink-primary);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.list-card:hover {
+  border-color: var(--accent);
+  background-color: var(--bg-surface);
+}
+
+.list-card.is-annual {
+  border-color: rgba(124, 105, 255, 0.55);
+}
+
+.list-collage {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 2px;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  overflow: hidden;
+}
+
+.list-collage-cell {
+  background-color: var(--bg-surface);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-secondary);
+  overflow: hidden;
+}
+
+.list-collage-cell img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.list-card-head {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.list-card-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.list-card-desc {
+  font-size: 0.78rem;
+  color: var(--ink-secondary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Public Profile Annual Highlights (Top 2026, Top 2027...) */
+.public-annual-lists {
+  margin-bottom: 2.25rem;
+}
+
+.annual-badges-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem;
+}
+
+.annual-badge-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.55rem 0.95rem;
+  border: 1px solid var(--accent);
+  background-color: var(--bg-surface);
+  color: var(--ink-primary);
+  font: inherit;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.annual-badge-btn:hover {
+  background-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+.annual-badge-btn:hover .meta-label {
+  color: var(--accent-ink);
+  opacity: 0.85;
+}
+
+.annual-badge-icon {
+  width: 18px;
+  height: 18px;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.annual-badge-btn:hover .annual-badge-icon {
+  color: var(--accent-ink);
+}
+
+.annual-badge-name {
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+/* Add-to-List Inline Picker on Album Page */
+.list-picker-box {
+  margin-top: 0.75rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border-subtle);
+  background-color: var(--bg-surface);
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.list-picker-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.42rem 0.55rem;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-page);
+  color: var(--ink-primary);
+  font: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s ease;
+}
+
+.list-picker-row:hover {
+  border-color: var(--accent);
+}
+
+.list-picker-row.added {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.list-picker-quick-form {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.25rem;
+}
+
+.list-picker-quick-form input {
+  padding: 0.45rem 0.65rem;
+  font-size: 0.82rem;
+}
+
+/* List Detail View */
+.list-eyebrow-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.list-meta-line {
+  margin: 0.45rem 0 0;
+}
+
+.list-add-search {
+  margin-bottom: 1.75rem;
+}
+
+.list-rank-badge {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  z-index: 2;
+  padding: 0.15rem 0.45rem;
+  background: rgba(17, 17, 16, 0.86);
+  border: 1px solid var(--accent);
+  color: #ffffff;
+  font-family: var(--font-modular);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+/* Similar Albums on Album Detail */
+.similar-section {
+  margin-top: 2.25rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.similar-albums-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 /* Always reveal compact overlay actions on touch devices without hover */
 @media (hover: none) {
   .cover-hover-actions {
     opacity: 1;
-    padding: 1.1rem 0.4rem 0.4rem;
+    padding: 0.95rem 0.35rem 0.35rem;
   }
 
   .cover-action-btn {
-    font-size: 0.68rem;
-    padding: 0.3rem 0.32rem;
+    font-size: 0.66rem;
+    padding: 0.26rem 0.25rem;
   }
 }
 
+@media (max-width: 920px) {
+  .discovery-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+/* Mobile-First Optimization */
 @media (max-width: 760px) {
+  .site-header {
+    padding: 0.95rem var(--gutter);
+    gap: 0.65rem;
+  }
+
+  .brand-name-btn {
+    font-size: 0.74rem;
+    letter-spacing: 0.1em;
+  }
+
+  .vinyl-mark {
+    width: 19px;
+    height: 19px;
+  }
+
+  .header-date,
+  .footer-tagline {
+    display: none;
+  }
+
+  .main-nav {
+    order: 3;
+    width: 100%;
+    gap: 1rem;
+    padding-top: 0.45rem;
+    border-top: 1px solid var(--border-subtle);
+    justify-content: space-between;
+  }
+
+  .nav-link {
+    font-size: 0.82rem;
+  }
+
+  .page-container {
+    padding: 1.35rem var(--gutter) 3rem;
+  }
+
+  .station-meta-bar {
+    margin-bottom: 1.1rem;
+  }
+
+  .station-eyebrow {
+    display: none;
+  }
+
+  /* Mobile Showcase Flow: Cover -> Title -> Icon Buttons -> Compact Specs -> Synopsis -> Notes */
   .album-showcase {
-    grid-template-columns: 1fr;
+    display: flex;
+    flex-direction: column;
+    gap: 1.05rem;
+  }
+
+  .album-showcase .artwork-column,
+  .album-showcase .editorial-column {
+    display: contents;
   }
 
   .vinyl-stage {
-    max-width: 340px;
+    order: 10;
+    max-width: 245px;
+    padding-right: 22px;
+    margin: 0 auto 0.25rem;
+  }
+
+  .title-block {
+    order: 20;
+  }
+
+  .album-title {
+    font-size: clamp(1.7rem, 7.2vw, 2.35rem);
+  }
+
+  .station-main[data-aesthetic="italic"] .album-title {
+    font-size: clamp(2rem, 8.2vw, 2.75rem);
+  }
+
+  .tag-list {
+    margin-top: 0.6rem;
+    gap: 0.35rem;
+  }
+
+  .tag-pill {
+    font-size: 0.7rem;
+    padding: 0.12rem 0.48rem;
+  }
+
+  .interaction-bar {
+    order: 30;
+    margin-top: 0;
+    gap: 0.5rem;
+  }
+
+  .interaction-bar .icon-action-btn {
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .interaction-bar .icon-action-btn .btn-label {
+    display: none;
+  }
+
+  .interaction-bar .icon-action-btn .btn-icon {
+    width: 17px;
+    height: 17px;
+  }
+
+  .list-picker-box {
+    order: 32;
+  }
+
+  .preview-wrap {
+    order: 35;
+    margin-top: 0;
+  }
+
+  .album-specs {
+    order: 40;
+    margin: 0;
+    padding: 0;
+    border-top: none;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem 0.6rem;
+  }
+
+  .album-specs > div {
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .album-specs > div:not(:last-child)::after {
+    content: "·";
+    margin-left: 0.6rem;
+    color: var(--ink-secondary);
+  }
+
+  .album-specs dt {
+    display: none;
+  }
+
+  .album-specs dd {
+    font-size: 0.8rem;
+    color: var(--ink-secondary);
+    font-weight: 400;
+  }
+
+  .detail-inline-link {
+    order: 45;
+    margin-top: 0;
+    align-self: flex-start;
+    font-size: 0.82rem;
+  }
+
+  .album-synopsis {
+    order: 50;
+    margin-top: 0.25rem;
+    font-size: 0.9rem;
+    line-height: 1.5;
+  }
+
+  .detail-label-note {
+    order: 55;
+    margin-top: 0;
+  }
+
+  .tracklist-section {
+    order: 60;
+    margin-top: 0.75rem;
+  }
+
+  .reviews-section {
+    order: 70;
+    margin-top: 1rem;
+  }
+
+  .similar-section {
+    order: 80;
+    margin-top: 1.25rem;
+  }
+
+  .new-list-form {
+    grid-template-columns: 1fr;
+  }
+
+  /* Horizontal swipe carousel for Home Discovery on mobile */
+  .home-discovery-section {
+    margin-top: 2.5rem;
+    padding-top: 1.5rem;
+  }
+
+  .discovery-grid {
+    display: flex;
+    overflow-x: auto;
+    gap: 0.85rem;
+    padding-bottom: 0.5rem;
+    scroll-snap-type: x proximity;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .discovery-grid .shelf-card {
+    flex: 0 0 142px;
+    scroll-snap-align: start;
   }
 
   .public-profile-header {
@@ -1507,7 +2051,7 @@ textarea:focus {
   }
 
   .top-five-grid {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .tbr-manual-form {
@@ -1539,5 +2083,11 @@ textarea:focus {
 
   #shelf-grid.mobile-cols-2 .shelf-card-actions {
     gap: 0.45rem;
+  }
+
+  .site-footer {
+    justify-content: center;
+    padding-top: 1rem;
+    padding-bottom: 1.25rem;
   }
 }

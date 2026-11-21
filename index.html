@@ -32,7 +32,7 @@
     </nav>
 
     <div class="header-controls">
-      <span id="current-date-label" class="meta-label"></span>
+      <span id="current-date-label" class="meta-label header-date"></span>
       <button id="theme-toggle-btn" class="text-btn" type="button" aria-label="Toggle color theme">Light</button>
       <button id="sign-out-btn" class="text-btn hidden" type="button">Sign out</button>
     </div>
@@ -130,10 +130,10 @@
     </div>
   </section>
 
-  <!-- DAILY RECOMMENDATION VIEW -->
+  <!-- DAILY RECOMMENDATION & HOME DISCOVERY VIEW -->
   <main id="station-view" class="page-container station-main hidden" data-aesthetic="editorial">
     <div class="station-meta-bar">
-      <span class="eyebrow">Today's Transmission — <span id="media-type-badge">Album</span></span>
+      <span class="eyebrow station-eyebrow">Today's Transmission — <span id="media-type-badge">Album</span></span>
       <span id="listener-greeting" class="meta-label"></span>
     </div>
 
@@ -171,10 +171,21 @@
         </dl>
 
         <div class="interaction-bar" aria-label="Shelf actions for this album">
-          <button id="want-btn" class="taste-chip" type="button">Want to listen</button>
-          <button id="listened-btn" class="taste-chip" type="button">Listened</button>
+          <button id="want-btn" class="taste-chip icon-action-btn" type="button" aria-label="Want to listen" title="Want to listen">
+            <svg class="btn-icon" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M3.5 2.25h9a.75.75 0 0 1 .75.75v10.75l-5.25-3-5.25 3V3a.75.75 0 0 1 .75-.75Z" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round" />
+            </svg>
+            <span class="btn-label">Want to listen</span>
+          </button>
+          <button id="listened-btn" class="taste-chip icon-action-btn" type="button" aria-label="Listened" title="Listened">
+            <svg class="btn-icon" viewBox="0 0 16 16" aria-hidden="true">
+              <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.35" />
+              <path d="m5.3 8.1 1.85 1.85 3.65-3.9" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            <span class="btn-label">Listened</span>
+          </button>
         </div>
-        <button id="station-open-details-btn" class="text-btn detail-inline-link" type="button">Tracklist &amp; full details →</button>
+        <button id="station-open-details-btn" class="text-btn detail-inline-link" type="button">Tracklist &amp; details →</button>
       </div>
 
       <div class="editorial-column">
@@ -208,6 +219,30 @@
         </section>
       </div>
     </article>
+
+    <!-- HOME DISCOVERY: POPULAR RIGHT NOW -->
+    <section id="popular-global-section" class="home-discovery-section hidden" aria-label="Popular albums right now">
+      <div class="reviews-header">
+        <div>
+          <p class="eyebrow">Charts</p>
+          <h2 class="discovery-heading">Popular <span class="editorial-accent">right now</span></h2>
+        </div>
+        <span id="popular-global-sub" class="meta-label"></span>
+      </div>
+      <div id="popular-global-grid" class="discovery-grid"></div>
+    </section>
+
+    <!-- HOME DISCOVERY: POPULAR AMONG LISTENERS -->
+    <section id="popular-community-section" class="home-discovery-section hidden" aria-label="Popular albums among listeners">
+      <div class="reviews-header">
+        <div>
+          <p class="eyebrow">Community Shelves</p>
+          <h2 class="discovery-heading">Popular among <span class="editorial-accent">listeners</span></h2>
+        </div>
+        <span id="popular-community-sub" class="meta-label"></span>
+      </div>
+      <div id="popular-community-grid" class="discovery-grid"></div>
+    </section>
   </main>
 
   <!-- MY SHELF VIEW -->
@@ -235,19 +270,20 @@
         <button id="tab-want" class="mode-tab active" type="button">Want to listen <span id="count-want" class="tab-count">0</span></button>
         <button id="tab-tbr" class="mode-tab" type="button">TBR <span id="count-tbr" class="tab-count">0</span></button>
         <button id="tab-listened" class="mode-tab" type="button">Listened <span id="count-listened" class="tab-count">0</span></button>
+        <button id="tab-lists" class="mode-tab" type="button">Lists <span id="count-lists" class="tab-count">0</span></button>
       </div>
 
       <div class="shelf-sort-wrap">
         <label for="shelf-sort-select" class="meta-label">Sort by</label>
         <select id="shelf-sort-select" class="sort-select">
           <option value="recent">Recently added</option>
-          <option value="year-desc">Release year (Newest)</option>
-          <option value="year-asc">Release year (Oldest)</option>
+          <option value="year-desc">Release date (Newest)</option>
+          <option value="year-asc">Release date (Oldest)</option>
           <option value="popularity">Popularity</option>
           <option value="title">Title (A–Z)</option>
           <option value="artist">Artist (A–Z)</option>
         </select>
-        <button id="shelf-grid-toggle" class="mini-btn mobile-grid-toggle" type="button" aria-label="Toggle grid columns">2 cols</button>
+        <button id="shelf-grid-toggle" class="mini-btn mobile-grid-toggle" type="button" aria-label="Toggle grid columns">1 col</button>
       </div>
     </div>
 
@@ -265,6 +301,28 @@
           <button id="tbr-cancel-btn" type="button" class="text-btn">Cancel</button>
         </div>
       </form>
+    </div>
+
+    <!-- Lists Panel (shown on Lists tab) -->
+    <div id="lists-panel" class="lists-panel hidden">
+      <div id="annual-list-prompt" class="annual-prompt-card"></div>
+
+      <div class="lists-toolbar">
+        <h2 class="section-heading">Your Lists</h2>
+        <button id="new-list-toggle-btn" class="text-btn" type="button">+ New list</button>
+      </div>
+
+      <form id="new-list-form" class="new-list-form hidden">
+        <input id="new-list-title" type="text" placeholder="List name (e.g. Late Night Drives, Best of 90s)" required />
+        <input id="new-list-desc" type="text" placeholder="Short description (optional)" />
+        <div class="tbr-form-actions">
+          <button type="submit" class="primary-btn tbr-save-btn">Create list</button>
+          <button id="new-list-cancel-btn" type="button" class="text-btn">Cancel</button>
+        </div>
+      </form>
+
+      <div id="user-lists-grid" class="lists-grid"></div>
+      <p id="lists-empty-state" class="empty-state hidden">No lists created yet. Start your annual Top 10 above or create a custom list.</p>
     </div>
 
     <div id="shelf-grid" class="shelf-grid"></div>
@@ -348,6 +406,13 @@
         </div>
       </div>
 
+      <div id="public-annual-lists" class="public-annual-lists hidden">
+        <div class="reviews-header">
+          <h2 class="section-heading">Annual Top 10 Lists</h2>
+        </div>
+        <div id="public-annual-badges" class="annual-badges-row"></div>
+      </div>
+
       <div id="public-top-five-section" class="public-top-five hidden">
         <div class="reviews-header">
           <h2 class="section-heading">Top 5 Favorite Albums</h2>
@@ -359,8 +424,10 @@
         <button id="public-tab-listened" class="mode-tab active" type="button">Listened <span id="public-count-listened" class="tab-count">0</span></button>
         <button id="public-tab-want" class="mode-tab" type="button">Want to listen <span id="public-count-want" class="tab-count">0</span></button>
         <button id="public-tab-tbr" class="mode-tab" type="button">TBR <span id="public-count-tbr" class="tab-count">0</span></button>
+        <button id="public-tab-lists" class="mode-tab" type="button">Lists <span id="public-count-lists" class="tab-count">0</span></button>
       </div>
 
+      <div id="public-lists-grid" class="lists-grid hidden"></div>
       <div id="public-shelf-grid" class="shelf-grid"></div>
       <p id="public-shelf-empty" class="empty-state hidden">Nothing on this shelf yet.</p>
     </div>
@@ -404,11 +471,41 @@
         </dl>
 
         <div class="interaction-bar" aria-label="Shelf actions">
-          <button id="detail-want-btn" class="taste-chip" type="button">Want to listen</button>
-          <button id="detail-tbr-btn" class="taste-chip" type="button">TBR</button>
-          <button id="detail-listened-btn" class="taste-chip" type="button">Listened</button>
-          <button id="detail-topfive-btn" class="taste-chip" type="button">+ Top 5</button>
+          <button id="detail-want-btn" class="taste-chip icon-action-btn" type="button" aria-label="Want to listen" title="Want to listen">
+            <svg class="btn-icon" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M3.5 2.25h9a.75.75 0 0 1 .75.75v10.75l-5.25-3-5.25 3V3a.75.75 0 0 1 .75-.75Z" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round" />
+            </svg>
+            <span class="btn-label">Want to listen</span>
+          </button>
+          <button id="detail-tbr-btn" class="taste-chip icon-action-btn" type="button" aria-label="TBR (To Be Released)" title="TBR">
+            <svg class="btn-icon" viewBox="0 0 16 16" aria-hidden="true">
+              <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.35" />
+              <path d="M8 4.75V8l2.25 1.5" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            <span class="btn-label">TBR</span>
+          </button>
+          <button id="detail-listened-btn" class="taste-chip icon-action-btn" type="button" aria-label="Listened" title="Listened">
+            <svg class="btn-icon" viewBox="0 0 16 16" aria-hidden="true">
+              <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.35" />
+              <path d="m5.3 8.1 1.85 1.85 3.65-3.9" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            <span class="btn-label">Listened</span>
+          </button>
+          <button id="detail-topfive-btn" class="taste-chip icon-action-btn" type="button" aria-label="Add to Top 5" title="Top 5 Favorite">
+            <svg class="btn-icon" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M8 13.4 2.85 8.55a3.3 3.3 0 0 1 4.65-4.68L8 4.38l.5-.51a3.3 3.3 0 0 1 4.65 4.68L8 13.4Z" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round" />
+            </svg>
+            <span class="btn-label">+ Top 5</span>
+          </button>
+          <button id="detail-list-btn" class="taste-chip icon-action-btn" type="button" aria-label="Add to list" title="Add to list">
+            <svg class="btn-icon" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M2.5 4h11M2.5 8h7.5M2.5 12h6M12 9.5v4M10 11.5h4" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" />
+            </svg>
+            <span class="btn-label">+ List</span>
+          </button>
         </div>
+
+        <div id="detail-list-picker" class="list-picker-box hidden" aria-label="Add album to list"></div>
 
         <div id="detail-preview-wrap" class="preview-wrap hidden">
           <button id="detail-preview-btn" class="preview-btn" type="button" aria-label="Play track preview">
@@ -461,6 +558,13 @@
             </div>
           </form>
         </section>
+
+        <section id="album-similar-section" class="similar-section hidden" aria-label="Similar albums">
+          <div class="reviews-header">
+            <h2 class="section-heading">You might also like</h2>
+          </div>
+          <div id="album-similar-grid" class="discovery-grid similar-albums-grid"></div>
+        </section>
       </div>
     </article>
   </section>
@@ -493,12 +597,49 @@
       <div id="artist-eps-grid" class="shelf-grid"></div>
     </div>
 
+    <div id="artist-similar-section" class="artist-release-section hidden">
+      <div class="reviews-header">
+        <h2 class="section-heading">Similar artists</h2>
+      </div>
+      <div id="artist-similar-list" class="artist-results-row"></div>
+    </div>
+
     <p id="detail-artist-status" class="meta-label"></p>
     <p id="detail-artist-empty" class="empty-state hidden">No LPs or EPs found for this artist.</p>
   </section>
 
+  <!-- LIST DETAIL VIEW -->
+  <section id="list-detail-view" class="page-container hidden" aria-label="List details">
+    <button id="list-detail-back" class="text-btn back-link" type="button">← Back</button>
+
+    <div class="artist-hero list-detail-hero">
+      <div>
+        <div id="list-detail-eyebrow" class="eyebrow list-eyebrow-row"></div>
+        <h1 id="list-detail-title" class="artist-page-title"></h1>
+        <p id="list-detail-desc" class="public-bio hidden"></p>
+        <p id="list-detail-meta" class="meta-label list-meta-line"></p>
+      </div>
+      <button id="list-delete-btn" class="text-btn hidden" type="button">Delete list</button>
+    </div>
+
+    <div id="list-add-search-wrap" class="shelf-search-wrap list-add-search hidden">
+      <div class="search-box">
+        <input
+          id="list-album-search"
+          type="text"
+          placeholder="Search an album or paste Apple Music link to add..."
+          autocomplete="off"
+        />
+        <div id="list-search-results" class="search-results hidden"></div>
+      </div>
+    </div>
+
+    <div id="list-detail-grid" class="shelf-grid"></div>
+    <p id="list-detail-empty" class="empty-state hidden">No albums in this list yet.</p>
+  </section>
+
   <footer class="site-footer">
-    <span class="meta-label">No ratings. No algorithms chasing clicks.</span>
+    <span class="meta-label footer-tagline">No ratings. No algorithms chasing clicks.</span>
     <div id="dev-day-controls" class="dev-controls">
       <button id="sim-prev-day" class="text-btn" type="button">← Prev day</button>
       <button id="sim-next-day" class="text-btn" type="button">Next day →</button>
