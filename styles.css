@@ -1032,6 +1032,23 @@ textarea:focus {
   border: 1px solid var(--border-subtle);
 }
 
+.tag-pill-btn {
+  background: transparent;
+  font: inherit;
+  font-size: 0.76rem;
+  color: var(--ink-secondary);
+  padding: 0.2rem 0.62rem;
+  border: 1px solid var(--border-subtle);
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background-color 0.15s ease;
+}
+
+.tag-pill-btn:hover {
+  border-color: var(--accent);
+  color: var(--ink-primary);
+  background-color: var(--bg-surface);
+}
+
 .album-synopsis {
   margin: 1.5rem 0 0;
   color: var(--ink-primary);

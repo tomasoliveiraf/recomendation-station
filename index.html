@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>RECOMMENTATION STATION</title>
+  <title>Recommendation Station</title>
   <link rel="icon" href="favicon.ico" type="image/x-icon" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -189,11 +189,11 @@
       </div>
 
       <div class="editorial-column">
-        <div class="title-block">
-          <button id="album-artist" class="artist-name artist-link-btn" type="button"></button>
-          <h1 id="album-title" class="album-title clickable-title"></h1>
-          <div id="album-tags" class="tag-list"></div>
-        </div>
+  <div class="title-block">
+    <button id="album-artist" class="artist-name artist-link-btn" type="button"></button>
+    <h1 id="album-title" class="album-title clickable-title"></h1>
+    <div id="album-tags" class="tag-list"></div>
+  </div>
 
         <p id="album-synopsis" class="album-synopsis"></p>
 
@@ -590,6 +590,7 @@
         <div class="title-block">
           <button id="detail-album-artist-btn" class="artist-name artist-link-btn" type="button"></button>
           <h1 id="detail-album-title" class="album-title"></h1>
+          <div id="detail-album-tags" class="tag-list"></div>
         </div>
 
         <p id="detail-album-synopsis" class="album-synopsis hidden"></p>
@@ -714,6 +715,37 @@
 
     <div id="list-detail-grid" class="shelf-grid"></div>
     <p id="list-detail-empty" class="empty-state hidden">No albums in this list yet.</p>
+  </section>
+
+  <!-- GENRE DETAIL VIEW -->
+  <section id="genre-detail-view" class="page-container hidden" aria-label="Genre albums">
+    <button id="genre-detail-back" class="text-btn back-link" type="button">← Back</button>
+
+    <div class="artist-hero">
+      <div>
+        <p class="eyebrow">Genre</p>
+        <h1 id="genre-detail-title" class="artist-page-title"></h1>
+      </div>
+      <div class="artist-hero-controls">
+        <div class="inline-sort-wrap">
+          <label for="genre-sort-select" class="meta-label">Sort by</label>
+          <select id="genre-sort-select" class="sort-select">
+            <option value="popularity" selected>Popularity</option>
+            <option value="title">Title (A–Z)</option>
+            <option value="artist">Artist (A–Z)</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="reviews-header">
+      <h2 class="section-heading">Popular albums</h2>
+      <span id="genre-detail-count" class="meta-label"></span>
+    </div>
+
+    <div id="genre-albums-grid" class="shelf-grid"></div>
+    <p id="genre-detail-status" class="meta-label"></p>
+    <p id="genre-detail-empty" class="empty-state hidden">No albums found for this genre yet.</p>
   </section>
 
   <footer class="site-footer">

@@ -5,6 +5,7 @@ const LASTFM_API_KEY = "206b77af8d8f6e6edeafd71d306992ea";
 const ITUNES_COUNTRY = "PT";
 const COVER_CACHE_KEY = "recommentation_station_covers_v1";
 const ARTIST_PHOTO_CACHE_KEY = "recommentation_station_artist_photos_v1";
+const UPCOMING_CACHE_KEY = "recommentation_station_upcoming_v3";
 const THEME_KEY = "recommentation_station_theme_v1";
 const SHELF_COLS_KEY = "recommentation_station_shelf_cols_v3";
 const SHELF_SORT_KEY = "recommentation_station_shelf_sort_v1";
@@ -15,6 +16,7 @@ const CURRENT_YEAR = new Date().getFullYear();
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const $ = (id) => document.getElementById(id);
 const on = (id, evt, fn) => $(id)?.addEventListener(evt, fn);
+const toArray = (val) => (Array.isArray(val) ? val : val ? [val] : []);
 
 const TASTE_TO_LASTFM_TAGS = {
   "Pop": ["pop"],
@@ -128,6 +130,12 @@ let defaultPreviewTrack = null;
 let activeDetailArtist = null;
 let artistReqId = 0;
 
+let activeGenreName = "";
+let activeGenreAlbums = [];
+let activeGenreSort = "popularity";
+let genreReqId = 0;
+const genreAlbumsCache = new Map();
+
 let draftArtists = [];
 let draftTopFive = [];
 let draftAvatarUrl = "";
@@ -162,13 +170,27 @@ function syncShelfCache(savedRow, removedAlbumId = null) {
 
 // ------------------------------------------------------------
 // Runtime DOM & Style Compatibility Helpers
-// Ensures new sections/elements always exist regardless of HTML snapshot
 // ------------------------------------------------------------
 function injectCompatStyles() {
   if ($("rs-compat-styles")) return;
   const style = document.createElement("style");
   style.id = "rs-compat-styles";
   style.textContent = `
+    .tag-pill-btn {
+      background: transparent;
+      font: inherit;
+      font-size: 0.76rem;
+      color: var(--ink-secondary);
+      padding: 0.2rem 0.62rem;
+      border: 1px solid var(--border-subtle);
+      cursor: pointer;
+      transition: border-color 0.15s ease, color 0.15s ease, background-color 0.15s ease;
+    }
+    .tag-pill-btn:hover {
+      border-color: var(--accent);
+      color: var(--ink-primary);
+      background-color: var(--bg-surface);
+    }
     .artist-pill-btn {
       flex-direction: row !important;
       align-items: center !important;
@@ -287,6 +309,18 @@ function injectCompatStyles() {
   document.head.appendChild(style);
 }
 
+function ensureAlbumDetailTagsContainer() {
+  let el = $("detail-album-tags");
+  if (el) return el;
+  const titleEl = $("detail-album-title");
+  if (!titleEl) return null;
+  el = document.createElement("div");
+  el.id = "detail-album-tags";
+  el.className = "tag-list";
+  titleEl.insertAdjacentElement("afterend", el);
+  return el;
+}
+
 function ensureHomeDiscoveryContainers() {
   const station = $("station-view");
   if (!station) return;
@@ -322,7 +356,6 @@ function ensureHomeDiscoveryContainers() {
     }
   ];
 
-  // Create any missing section and append in the exact requested order
   defs.forEach((d) => {
     let sec = $(d.secId);
     if (!sec) {
@@ -764,7 +797,6 @@ function fetchJsonp(url, cbParam = "callback") {
   });
 }
 
-// Fetches crisp official artist portraits via Deezer JSONP (no API key / no CORS issues)
 async function fetchArtistPhoto(artistName) {
   if (!artistName) return "";
   const key = artistName.toLowerCase().trim();
@@ -895,11 +927,10 @@ async function verifyLastFmFullAlbum(artist, title) {
   const alb = info?.album;
   if (!alb) return null;
 
-  const tags = (alb.tags?.tag || []).map((t) => (t.name || "").toLowerCase().trim());
+  const tags = toArray(alb.tags?.tag).map((t) => (t?.name || "").toLowerCase().trim());
   if (tags.slice(0, 3).some((t) => t === "single" || t === "ep")) return null;
 
-  const rawTracks = alb.tracks?.track;
-  const tracks = Array.isArray(rawTracks) ? rawTracks : rawTracks ? [rawTracks] : [];
+  const tracks = toArray(alb.tracks?.track);
   if (tracks.length < 5) return null;
 
   const withDur = tracks.filter((t) => Number(t.duration || 0) > 0);
@@ -915,8 +946,7 @@ async function verifyLastFmFullAlbum(artist, title) {
 
 async function searchLastFmAlbums(term, limit = 12) {
   const data = await fetchLastFm("album.search", { album: term, limit: Math.min(30, limit * 2) });
-  const raw = data?.results?.albummatches?.album;
-  const list = Array.isArray(raw) ? raw : raw ? [raw] : [];
+  const list = toArray(data?.results?.albummatches?.album);
   const seen = new Set();
   const out = [];
 
@@ -1000,8 +1030,7 @@ async function searchArtistsHybrid(term, limit = 8) {
 
   if (!out.length) {
     const lfm = await fetchLastFm("artist.search", { artist: term, limit });
-    const raw = lfm?.results?.artistmatches?.artist;
-    const list = Array.isArray(raw) ? raw : raw ? [raw] : [];
+    const list = toArray(lfm?.results?.artistmatches?.artist);
     for (const a of list) {
       if (!a?.name) continue;
       const k = a.name.toLowerCase();
@@ -1070,6 +1099,380 @@ async function fetchItunesRssTopAlbums(country, limit = 100) {
   }
 }
 
+const MONTH_INDEX = {
+  january: "01", jan: "01",
+  february: "02", feb: "02",
+  march: "03", mar: "03",
+  april: "04", apr: "04",
+  may: "05",
+  june: "06", jun: "06",
+  july: "07", jul: "07",
+  august: "08", aug: "08",
+  september: "09", sept: "09", sep: "09",
+  october: "10", oct: "10",
+  november: "11", nov: "11",
+  december: "12", dec: "12"
+};
+
+const MONTH_PATTERN = "(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sept|Sep|Oct|Nov|Dec)\\.?";
+
+async function fetchWikiParsedHtml(pageTitle) {
+  try {
+    const url = `https://en.wikipedia.org/w/api.php?action=parse&page=${encodeURIComponent(pageTitle)}&prop=text&redirects=1&formatversion=2&format=json&origin=*`;
+    const res = await fetch(url);
+    if (!res.ok) return "";
+    const data = await res.json();
+    return data?.parse?.text || "";
+  } catch {
+    return "";
+  }
+}
+
+async function fetchWikiAlbumCoversBatch(wikiTitles) {
+  const unique = [...new Set(wikiTitles.filter(Boolean))];
+  if (!unique.length) return new Map();
+
+  try {
+    const url = `https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(unique.join("|"))}&prop=pageimages&pilicense=any&pithumbsize=600&redirects=1&formatversion=2&format=json&origin=*`;
+    const res = await fetch(url);
+    if (!res.ok) return new Map();
+    const data = await res.json();
+
+    const normMap = new Map((data?.query?.normalized || []).map((n) => [n.from, n.to]));
+    const redirMap = new Map((data?.query?.redirects || []).map((r) => [r.from, r.to]));
+    const pageMap = new Map((data?.query?.pages || []).map((p) => [p.title, p.thumbnail?.source || ""]));
+
+    const out = new Map();
+    unique.forEach((orig) => {
+      let t = normMap.get(orig) || orig;
+      t = redirMap.get(t) || t;
+      const src = pageMap.get(t);
+      if (src) out.set(orig, src);
+    });
+    return out;
+  } catch {
+    return new Map();
+  }
+}
+
+async function fetchDeezerAlbumCover(artist, title) {
+  try {
+    const q = `artist:"${artist}" album:"${title}"`;
+    const data = await fetchJsonp(
+      `https://api.deezer.com/search/album?q=${encodeURIComponent(q)}&limit=3&output=jsonp`,
+      "callback"
+    );
+    const list = data?.data || [];
+    const needle = normalizeAlbumTitleForMatch(title).slice(0, 8);
+    const match =
+      list.find((a) => normalizeAlbumTitleForMatch(a.title).includes(needle)) ||
+      list[0];
+    return match?.cover_big || match?.cover_xl || match?.cover_medium || "";
+  } catch {
+    return "";
+  }
+}
+
+function parseWikiUpcomingTables(html, year, todayIso, maxDaysAhead = 180) {
+  if (!html) return [];
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  doc.querySelectorAll("sup, style").forEach((el) => el.remove());
+  doc.querySelectorAll("br").forEach((br) => br.replaceWith(" "));
+
+  const todayDate = new Date(`${todayIso}T00:00:00`);
+  const monthRegex = new RegExp(`\\b${MONTH_PATTERN}`, "i");
+  const mFirstRegex = new RegExp(`\\b${MONTH_PATTERN}\\s*(\\d{1,2})\\b`, "i");
+  const dFirstRegex = new RegExp(`\\b(\\d{1,2})\\s*${MONTH_PATTERN}`, "i");
+  const items = [];
+
+  doc.querySelectorAll("table.wikitable").forEach((table) => {
+    let activeMonth = "";
+    let prev = table.previousElementSibling;
+    while (prev) {
+      const m = prev.textContent?.match(monthRegex);
+      if (m && (/^H[2-4]$/.test(prev.tagName) || prev.querySelector?.("h2, h3, h4"))) {
+        activeMonth = m[1].toLowerCase();
+        break;
+      }
+      if (prev.tagName === "TABLE") break;
+      prev = prev.previousElementSibling;
+    }
+
+    const rows = Array.from(table.querySelectorAll("tr"));
+    const grid = [];
+
+    rows.forEach((tr, rIdx) => {
+      if (!grid[rIdx]) grid[rIdx] = [];
+      let cIdx = 0;
+      Array.from(tr.children).forEach((cell) => {
+        if (cell.tagName !== "TD" && cell.tagName !== "TH") return;
+        while (grid[rIdx][cIdx]) cIdx++;
+        const rs = Math.max(1, parseInt(cell.getAttribute("rowspan") || "1", 10));
+        const cs = Math.max(1, parseInt(cell.getAttribute("colspan") || "1", 10));
+        for (let r = 0; r < rs; r++) {
+          if (!grid[rIdx + r]) grid[rIdx + r] = [];
+          for (let c = 0; c < cs; c++) grid[rIdx + r][cIdx + c] = cell;
+        }
+        cIdx += cs;
+      });
+    });
+
+    let headerRowIdx = -1;
+    let dateCol = -1;
+    let artistCol = -1;
+    let albumCol = -1;
+    let genreCol = -1;
+    let labelCol = -1;
+
+    for (let r = 0; r < Math.min(4, grid.length); r++) {
+      const cols = grid[r].map((c) => (c?.textContent || "").replace(/\s+/g, " ").trim().toLowerCase());
+      const aIdx = cols.findIndex((t) => t === "artist" || t.startsWith("artist"));
+      const albIdx = cols.findIndex((t) => t === "album" || t.startsWith("album ") || t === "title");
+      if (aIdx >= 0 && albIdx >= 0) {
+        headerRowIdx = r;
+        dateCol = cols.findIndex((t) => t.includes("date"));
+        artistCol = aIdx;
+        albumCol = albIdx;
+        genreCol = cols.findIndex((t) => t.includes("genre"));
+        labelCol = cols.findIndex((t) => t.includes("label"));
+        break;
+      }
+    }
+
+    if (headerRowIdx < 0 || dateCol < 0) return;
+
+    for (let r = headerRowIdx + 1; r < grid.length; r++) {
+      const row = grid[r];
+      if (!row || !row[dateCol] || !row[artistCol] || !row[albumCol]) continue;
+
+      if (row[dateCol] === row[albumCol]) {
+        const bannerMonth = row[dateCol].textContent.match(monthRegex);
+        if (bannerMonth) activeMonth = bannerMonth[1].toLowerCase();
+        continue;
+      }
+
+      const dateCells = [];
+      const endDateCol = dateCol < artistCol ? artistCol : dateCol + 1;
+      for (let c = dateCol; c < endDateCol; c++) {
+        if (row[c] && !dateCells.includes(row[c])) dateCells.push(row[c]);
+      }
+      const dateText = dateCells
+        .map((c) => c.textContent.replace(/\s+/g, " ").trim())
+        .filter(Boolean)
+        .join(" ");
+
+      let monthName = "";
+      let dayNum = "";
+
+      const mFirst = dateText.match(mFirstRegex);
+      const dFirst = dateText.match(dFirstRegex);
+      const dOnly = dateText.match(/^(\d{1,2})$/);
+
+      if (mFirst) {
+        monthName = mFirst[1].toLowerCase();
+        dayNum = mFirst[2];
+        activeMonth = monthName;
+      } else if (dFirst) {
+        dayNum = dFirst[1];
+        monthName = dFirst[2].toLowerCase();
+        activeMonth = monthName;
+      } else if (dOnly && activeMonth) {
+        monthName = activeMonth;
+        dayNum = dOnly[1];
+      } else {
+        const mOnly = dateText.match(monthRegex);
+        if (mOnly) activeMonth = mOnly[1].toLowerCase();
+        continue;
+      }
+
+      const mm = MONTH_INDEX[monthName];
+      const dd = String(Number(dayNum)).padStart(2, "0");
+      if (!mm || Number(dayNum) < 1 || Number(dayNum) > 31) continue;
+
+      const isoDate = `${year}-${mm}-${dd}`;
+      if (isoDate <= todayIso) continue;
+
+      const diffDays = (new Date(`${isoDate}T00:00:00`) - todayDate) / 86400000;
+      if (diffDays > maxDaysAhead) continue;
+
+      const artist = row[artistCol].textContent.replace(/\s+/g, " ").trim();
+      const title = row[albumCol].textContent.replace(/\s+/g, " ").trim();
+      if (!artist || !title || /^(tba|tbd|untitled|to be announced)$/i.test(title)) continue;
+      if (isJunkTitle(title) || isEpTitle(title)) continue;
+
+      const albumLink = row[albumCol].querySelector('a[href^="/wiki/"]:not(.new)');
+      const artistLink = row[artistCol].querySelector('a[href^="/wiki/"]:not(.new)');
+      const albumWikiTitle = albumLink
+        ? decodeURIComponent(albumLink.getAttribute("href").replace("/wiki/", "")).replace(/_/g, " ")
+        : "";
+
+      items.push({
+        title,
+        artist,
+        release_date: isoDate,
+        release_year: String(year),
+        genre: genreCol >= 0 ? (row[genreCol]?.textContent || "").trim() : "",
+        label: labelCol >= 0 ? (row[labelCol]?.textContent || "").trim() : "",
+        albumWikiTitle,
+        hasAlbumArticle: Boolean(albumLink),
+        hasArtistArticle: Boolean(artistLink)
+      });
+    }
+  });
+
+  return items;
+}
+
+async function fetchMusicBrainzUpcomingAlbums(todayIso, maxDaysAhead = 150) {
+  try {
+    const start = new Date(`${todayIso}T00:00:00`);
+    start.setDate(start.getDate() + 1);
+    const end = new Date(`${todayIso}T00:00:00`);
+    end.setDate(end.getDate() + maxDaysAhead);
+
+    const query = `firstreleasedate:[${getDateSeed(start)} TO ${getDateSeed(end)}] AND primarytype:album`;
+    const url = `https://musicbrainz.org/ws/2/release-group?query=${encodeURIComponent(query)}&fmt=json&limit=60`;
+    const res = await fetch(url);
+    if (!res.ok) return [];
+    const data = await res.json();
+
+    const blockedSecondary = new Set([
+      "Compilation", "Live", "Remix", "DJ-mix", "Mixtape/Street",
+      "Demo", "Audio drama", "Audiobook", "Spokenword", "Interview"
+    ]);
+
+    const out = [];
+    for (const rg of data["release-groups"] || []) {
+      const secondary = rg["secondary-types"] || [];
+      if (secondary.some((t) => blockedSecondary.has(t))) continue;
+
+      const title = (rg.title || "").trim();
+      const artist = (rg["artist-credit"] || [])
+        .map((c) => `${c.name || c.artist?.name || ""}${c.joinphrase || ""}`)
+        .join("")
+        .trim();
+      const dateStr = (rg["first-release-date"] || "").trim();
+      if (!title || !artist || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) continue;
+      if (dateStr <= todayIso || isJunkTitle(title) || isEpTitle(title)) continue;
+
+      out.push({
+        title,
+        artist,
+        release_date: dateStr,
+        release_year: dateStr.slice(0, 4),
+        genre: "",
+        label: "",
+        albumWikiTitle: "",
+        hasAlbumArticle: false,
+        hasArtistArticle: false
+      });
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+async function fetchPopularUpcomingAlbums(limit = 10) {
+  const todayIso = getDateSeed(new Date());
+
+  try {
+    const cached = JSON.parse(localStorage.getItem(UPCOMING_CACHE_KEY) || "null");
+    if (cached && Date.now() - cached.ts < 12 * 3600 * 1000 && Array.isArray(cached.items)) {
+      const stillFuture = cached.items.filter((a) => isFutureReleaseDate(a.release_date, a.release_year));
+      if (stillFuture.length >= 4) return stillFuture.slice(0, limit);
+    }
+  } catch { /* ignore */ }
+
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+
+  const targets = [];
+  if (month < 6) {
+    targets.push({ year, pages: [`List of ${year} albums (January–June)`, `List of ${year} albums`] });
+    if (month >= 3) targets.push({ year, pages: [`List of ${year} albums (July–December)`] });
+  } else {
+    targets.push({ year, pages: [`List of ${year} albums (July–December)`, `List of ${year} albums`] });
+    if (month >= 8) {
+      targets.push({ year: year + 1, pages: [`List of ${year + 1} albums (January–June)`, `List of ${year + 1} albums`] });
+    }
+  }
+
+  const [wikiGroups, mbItems] = await Promise.all([
+    Promise.all(
+      targets.map(async (t) => {
+        for (const page of t.pages) {
+          const html = await fetchWikiParsedHtml(page);
+          const rows = parseWikiUpcomingTables(html, t.year, todayIso, 180);
+          if (rows.length) return rows;
+        }
+        return [];
+      })
+    ),
+    fetchMusicBrainzUpcomingAlbums(todayIso, 150)
+  ]);
+
+  const seen = new Set();
+  const candidates = [];
+  for (const item of [...wikiGroups.flat(), ...mbItems]) {
+    const key = normalizeTitleKey(item.title, item.artist);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    candidates.push(item);
+  }
+
+  if (!candidates.length) return [];
+
+  candidates.sort(
+    (a, b) =>
+      (b.hasAlbumArticle - a.hasAlbumArticle) ||
+      (b.hasArtistArticle - a.hasArtistArticle) ||
+      a.release_date.localeCompare(b.release_date)
+  );
+  const shortlist = candidates.slice(0, 28);
+
+  await Promise.all(
+    shortlist.map(async (item) => {
+      const primaryArtist = item.artist.split(/\s+(?:and|&|feat\.|ft\.|with)\s+|,\s*/i)[0].trim();
+      const info = await fetchLastFm("artist.getInfo", { artist: primaryArtist, autocorrect: 1 });
+      item.artistListeners = Number(info?.artist?.stats?.listeners || 0) || 0;
+    })
+  );
+
+  shortlist.sort((a, b) => b.artistListeners - a.artistListeners || a.release_date.localeCompare(b.release_date));
+  const picked = shortlist.slice(0, limit);
+
+  const wikiCovers = await fetchWikiAlbumCoversBatch(picked.map((p) => p.albumWikiTitle));
+  const results = await Promise.all(
+    picked.map(async (item) => {
+      let cover = (item.albumWikiTitle && wikiCovers.get(item.albumWikiTitle)) || "";
+      if (!cover) cover = await fetchDeezerAlbumCover(item.artist, item.title);
+
+      const slug = `${item.artist}-${item.title}`.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+      return {
+        album_id: `lfm-${slug}`,
+        collectionId: null,
+        artistId: null,
+        title: item.title,
+        artist: item.artist,
+        cover_url: cover,
+        release_year: item.release_year,
+        release_date: item.release_date,
+        genre: item.genre,
+        label: item.label
+      };
+    })
+  );
+
+  results.sort((a, b) => a.release_date.localeCompare(b.release_date));
+  try {
+    localStorage.setItem(UPCOMING_CACHE_KEY, JSON.stringify({ ts: Date.now(), items: results }));
+  } catch { /* ignore */ }
+
+  return results;
+}
+
 async function fetchHomeChartsData() {
   if (cachedHomeCharts) return cachedHomeCharts;
 
@@ -1092,7 +1495,6 @@ async function fetchHomeChartsData() {
     .filter((a) => isRecentReleaseDate(a.release_date, 120))
     .slice(0, 10);
 
-  // If fewer than 6, widen window to current year
   if (newPopular.length < 6) {
     const used = new Set(newPopular.map((a) => a.album_id));
     for (const a of combined) {
@@ -1105,66 +1507,67 @@ async function fetchHomeChartsData() {
     }
   }
 
-  // 3. Popular Upcoming (future release dates from charts + community TBRs)
+  // 3. Popular Upcoming (iTunes pre-orders + Wikipedia/MusicBrainz/Last.fm + community TBRs)
   const upcoming = [];
   const seenUp = new Set();
-  for (const a of combined) {
-    if (!isFutureReleaseDate(a.release_date)) continue;
+
+  const pushUpcoming = (a) => {
     const k = normalizeTitleKey(a.title, a.artist);
-    if (seenUp.has(k)) continue;
+    if (seenUp.has(k)) return;
     seenUp.add(k);
     upcoming.push(a);
-    if (upcoming.length >= 10) break;
+  };
+
+  for (const a of combined) {
+    if (isFutureReleaseDate(a.release_date)) pushUpcoming(a);
   }
 
-  // Supplement upcoming with community TBR albums (so it's rich even when Apple RSS has few pre-orders)
-  if (upcoming.length < 10) {
-    const { data: tbrRows } = await sb
+  const [wikiUpcoming, tbrRes] = await Promise.all([
+    fetchPopularUpcomingAlbums(10),
+    sb
       .from("user_album_interactions")
       .select("user_id, album_id, title, artist, cover_url, release_year, release_date, is_tbr")
       .eq("is_tbr", true)
       .order("updated_at", { ascending: false })
-      .limit(100);
+      .limit(100)
+  ]);
 
-    const tbrGroups = new Map();
-    for (const row of tbrRows || []) {
-      if (!row.title || !row.artist || isSingleTitle(row.title)) continue;
-      if (row.release_date && !isFutureReleaseDate(row.release_date, row.release_year)) continue;
-      const k = normalizeTitleKey(row.title, row.artist);
-      if (seenUp.has(k)) continue;
-      if (!tbrGroups.has(k)) {
-        tbrGroups.set(k, {
-          album_id: row.album_id,
-          collectionId: row.album_id?.startsWith("itunes-") ? row.album_id.replace("itunes-", "") : null,
-          title: row.title,
-          artist: row.artist,
-          cover_url: row.cover_url || "",
-          release_year: row.release_year || "",
-          release_date: row.release_date || null,
-          users: new Set()
-        });
-      }
-      tbrGroups.get(k).users.add(row.user_id);
-    }
+  wikiUpcoming.forEach(pushUpcoming);
 
-    Array.from(tbrGroups.values())
-      .sort((a, b) => b.users.size - a.users.size)
-      .forEach((g) => {
-        if (upcoming.length < 10) {
-          upcoming.push({ ...g, listenerCount: g.users.size });
-        }
+  const tbrGroups = new Map();
+  for (const row of tbrRes?.data || []) {
+    if (!row.title || !row.artist || isSingleTitle(row.title)) continue;
+    if (row.release_date && !isFutureReleaseDate(row.release_date, row.release_year)) continue;
+    const k = normalizeTitleKey(row.title, row.artist);
+    if (seenUp.has(k)) continue;
+    if (!tbrGroups.has(k)) {
+      tbrGroups.set(k, {
+        album_id: row.album_id,
+        collectionId: row.album_id?.startsWith("itunes-") ? row.album_id.replace("itunes-", "") : null,
+        title: row.title,
+        artist: row.artist,
+        cover_url: row.cover_url || "",
+        release_year: row.release_year || "",
+        release_date: row.release_date || null,
+        users: new Set()
       });
+    }
+    tbrGroups.get(k).users.add(row.user_id);
   }
 
-  // Sort upcoming soonest first
+  Array.from(tbrGroups.values())
+    .sort((a, b) => b.users.size - a.users.size)
+    .forEach((g) => pushUpcoming({ ...g, listenerCount: g.users.size }));
+
   upcoming.sort((a, b) => getReleaseDateSortKey(a, true) - getReleaseDateSortKey(b, true));
+  const finalUpcoming = upcoming.slice(0, 10);
 
   // 4. Overall Popular Right Now (released albums from PT chart first, excluding upcoming)
   const globalPopular = (ptList.length ? ptList : combined)
     .filter((a) => !isFutureReleaseDate(a.release_date))
     .slice(0, 10);
 
-  cachedHomeCharts = { newPopular, upcoming, globalPopular };
+  cachedHomeCharts = { newPopular, upcoming: finalUpcoming, globalPopular };
   return cachedHomeCharts;
 }
 
@@ -1272,7 +1675,6 @@ async function renderHomeDiscoverySections(reqId) {
     sec.classList.remove("hidden");
   };
 
-  // Exact requested order: 1. New popular -> 2. Community -> 3. Coming soon -> 4. Overall popular
   renderRow("popular-new-section", "popular-new-grid", "popular-new-sub", charts.newPopular, "Recent releases");
   renderRow("popular-community-section", "popular-community-grid", "popular-community-sub", communityAlbums, "Across Station shelves", { showListeners: true });
   renderRow("popular-upcoming-section", "popular-upcoming-grid", "popular-upcoming-sub", charts.upcoming, "Upcoming releases", { showUpcomingDate: true });
@@ -1333,8 +1735,8 @@ async function verifyAndBuildPickFromItunes(itunesAlbum, reason) {
   const runtime = totalMs > 0 ? `${Math.round(totalMs / 60000)} min` : `${tracks.length} tracks`;
 
   const lfmInfo = infoData?.album || {};
-  const lfmTags = (lfmInfo.tags?.tag || [])
-    .map((t) => t.name)
+  const lfmTags = toArray(lfmInfo.tags?.tag)
+    .map((t) => t?.name)
     .filter((n) => n && n.length < 28 && !/^\d{4}$/.test(n))
     .slice(0, 4);
 
@@ -1394,8 +1796,8 @@ async function generateDynamicDailyPick(profile, dateSeed, excluded) {
     const simData = await fetchLastFm("artist.getSimilar", { artist: seedRaw, limit: 20, autocorrect: 1 });
     const seedDisplay = formatDisplayNameCase(simData?.similarartists?.["@attr"]?.artist || seedRaw);
 
-    const similar = (simData?.similarartists?.artist || []).filter(
-      (a) => a.name && !favArtists.some((f) => f.toLowerCase() === a.name.toLowerCase())
+    const similar = toArray(simData?.similarartists?.artist).filter(
+      (a) => a?.name && !favArtists.some((f) => f.toLowerCase() === a.name.toLowerCase())
     );
 
     for (let i = 0; i < Math.min(5, similar.length); i++) {
@@ -1416,8 +1818,8 @@ async function generateDynamicDailyPick(profile, dateSeed, excluded) {
     const tag = mapped[dayHash % mapped.length];
     const tagData = await fetchLastFm("tag.getTopAlbums", { tag, limit: 40, page: (dayHash % 3) + 1 });
 
-    const rawCandidates = (tagData?.albums?.album || []).filter(
-      (alb) => alb.name && alb.artist?.name && !isExcludedCandidate(alb.name, alb.artist.name, excluded)
+    const rawCandidates = toArray(tagData?.albums?.album).filter(
+      (alb) => alb?.name && alb?.artist?.name && !isExcludedCandidate(alb.name, alb.artist.name, excluded)
     );
 
     for (let i = 0; i < Math.min(8, rawCandidates.length); i++) {
@@ -1659,7 +2061,6 @@ async function ensureAnnualList(year = CURRENT_YEAR) {
   });
 }
 
-// Follows API
 async function loadFollowSummary(targetUserId) {
   try {
     const [followersRes, followingRes, relationRes] = await Promise.all([
@@ -2027,6 +2428,165 @@ function createListenerCard(profile) {
 }
 
 // ------------------------------------------------------------
+// Genre Tags & Genre Detail Page
+// ------------------------------------------------------------
+const GENRE_TAG_ALIASES = {
+  "hip-hop/rap": "hip-hop",
+  "r&b/soul": "rnb",
+  "alternative": "alternative rock",
+  "singer/songwriter": "singer-songwriter",
+  "k-pop": "k-pop",
+  "j-pop": "j-pop",
+  "worldwide": "world"
+};
+
+const IGNORED_GENRE_TAGS = new Set([
+  "seen live", "favorites", "favourite", "favorite", "albums i own",
+  "my top albums", "under 2000 listeners", "spotify", "vinyl", "cd",
+  "female vocalists", "male vocalists", "single", "ep", "albums",
+  "best of", "awesome", "love", "check out", "to listen"
+]);
+
+function normalizeGenreForLastFm(genreName) {
+  const clean = (genreName || "").trim();
+  if (!clean) return "";
+  if (TASTE_TO_LASTFM_TAGS[clean]?.length) return TASTE_TO_LASTFM_TAGS[clean][0];
+  const lower = clean.toLowerCase();
+  if (GENRE_TAG_ALIASES[lower]) return GENRE_TAG_ALIASES[lower];
+  return lower.split("/")[0].trim();
+}
+
+function extractCleanGenreTags(rawTags = [], primaryGenre = "", artistName = "") {
+  const artistLower = (artistName || "").toLowerCase().trim();
+  const seen = new Set();
+  const out = [];
+
+  const pushTag = (raw) => {
+    if (!raw) return;
+    const trimmed = String(raw).trim();
+    const lower = trimmed.toLowerCase();
+    if (!trimmed || trimmed.length < 2 || trimmed.length > 26) return;
+    if (/^\d{4}s?$/.test(lower)) return;
+    if (IGNORED_GENRE_TAGS.has(lower)) return;
+    if (artistLower && lower === artistLower) return;
+    if (seen.has(lower)) return;
+    seen.add(lower);
+    out.push(formatDisplayNameCase(trimmed));
+  };
+
+  if (primaryGenre && primaryGenre !== "—" && primaryGenre.toLowerCase() !== "music") {
+    primaryGenre.split("/").forEach((part) => pushTag(part));
+  }
+  toArray(rawTags).forEach(pushTag);
+  return out.slice(0, 5);
+}
+
+function renderClickableGenrePills(container, genres = []) {
+  if (!container) return;
+  container.innerHTML = "";
+  const clean = [...new Set(toArray(genres).map((g) => String(g || "").trim()).filter(Boolean))];
+  clean.forEach((genre) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "tag-pill-btn";
+    btn.textContent = genre;
+    btn.addEventListener("click", () => openGenreDetail(genre));
+    container.appendChild(btn);
+  });
+}
+
+function renderGenreAlbumsGrid() {
+  const grid = $("genre-albums-grid");
+  if (!grid) return;
+  grid.innerHTML = "";
+  const sorted = sortAlbumsList(activeGenreAlbums, activeGenreSort);
+  $("genre-detail-count").textContent = sorted.length
+    ? `${sorted.length} ${sorted.length === 1 ? "album" : "albums"}`
+    : "";
+  $("genre-detail-empty").classList.toggle("hidden", sorted.length > 0);
+
+  sorted.forEach((alb) => {
+    const existing = shelfItems.find((s) => s.album_id === alb.album_id);
+    grid.appendChild(createAlbumCard(alb, { mode: "discovery", existing }));
+  });
+}
+
+async function openGenreDetail(genreName, push = true) {
+  if (!sessionUser) return showAuthView("signin");
+  const cleanName = formatDisplayNameCase((genreName || "").trim());
+  if (!cleanName || cleanName === "—") return;
+  if (push) pushRoute();
+
+  const reqId = ++genreReqId;
+  activeGenreName = cleanName;
+  activeGenreAlbums = [];
+  currentRoute = { type: "genre-detail", genre: cleanName };
+  setActiveNav("genre-detail");
+
+  $("genre-detail-title").textContent = cleanName;
+  $("genre-sort-select").value = activeGenreSort;
+  $("genre-detail-count").textContent = "";
+  $("genre-albums-grid").innerHTML = "";
+  $("genre-detail-empty").classList.add("hidden");
+  $("genre-detail-status").textContent = "Loading popular albums...";
+
+  const lfmTag = normalizeGenreForLastFm(cleanName);
+  const shelfPromise = loadUserShelf(sessionUser.id);
+
+  if (genreAlbumsCache.has(lfmTag)) {
+    shelfItems = await shelfPromise;
+    if (reqId !== genreReqId) return;
+    activeGenreAlbums = genreAlbumsCache.get(lfmTag);
+    $("genre-detail-status").textContent = "";
+    renderGenreAlbumsGrid();
+    return;
+  }
+
+  const tagData = await fetchLastFm("tag.getTopAlbums", { tag: lfmTag, limit: 70 });
+  if (reqId !== genreReqId) return;
+
+  const raw = toArray(tagData?.albums?.album).filter(
+    (a) => a?.name && a?.artist?.name && !isJunkTitle(a.name) && !isEpTitle(a.name)
+  );
+
+  const seen = new Set();
+  const candidates = [];
+  for (const item of raw) {
+    const key = normalizeTitleKey(item.name, item.artist.name);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    candidates.push(item);
+    if (candidates.length >= 42) break;
+  }
+
+  const verifiedList = await Promise.all(
+    candidates.map(async (item, idx) => {
+      const verified = await verifyLastFmFullAlbum(item.artist.name, item.name);
+      if (!verified) return null;
+      const cover = extractLastFmCover(verified.image) || extractLastFmCover(item.image);
+      const payload = toAlbumPayloadFromLastFm({
+        name: verified.name || item.name,
+        artist: verified.artist || item.artist.name,
+        image: cover ? [{ size: "extralarge", "#text": cover }] : []
+      });
+      payload.genre = cleanName;
+      payload.popularity = Number(verified.listeners || 0) || Math.max(1, 500 - idx);
+      return payload;
+    })
+  );
+
+  shelfItems = await shelfPromise;
+  if (reqId !== genreReqId) return;
+
+  const albums = verifiedList.filter(Boolean).slice(0, 36);
+  if (albums.length) genreAlbumsCache.set(lfmTag, albums);
+
+  activeGenreAlbums = albums;
+  $("genre-detail-status").textContent = "";
+  renderGenreAlbumsGrid();
+}
+
+// ------------------------------------------------------------
 // View Router & History Stack
 // ------------------------------------------------------------
 const VIEW_IDS = {
@@ -2036,7 +2596,8 @@ const VIEW_IDS = {
   listeners: "listeners-view",
   "album-detail": "album-detail-view",
   "artist-detail": "artist-detail-view",
-  "list-detail": "list-detail-view"
+  "list-detail": "list-detail-view",
+  "genre-detail": "genre-detail-view"
 };
 
 function setActiveNav(view, activeTabOverride = null) {
@@ -2076,7 +2637,8 @@ function goBack() {
     "public-profile": () => openPublicProfile(prev.profile, false, Boolean(prev.asOwnTab)),
     "album-detail": () => openAlbumDetail(prev.album, false),
     "artist-detail": () => openArtistDetail(prev.artist, false),
-    "list-detail": () => openListDetail(prev.listId, prev.ownerProfile, false)
+    "list-detail": () => openListDetail(prev.listId, prev.ownerProfile, false),
+    "genre-detail": () => openGenreDetail(prev.genre, false)
   };
   (handlers[prev.type] || handlers.station)();
 }
@@ -2213,7 +2775,6 @@ function showAuthView(mode = "signin") {
   setAuthMode(mode);
 }
 
-// Opens your own public profile directly from the Profile nav button
 async function openMyProfile(clearHistory = true) {
   if (!sessionUser) return showAuthView("signin");
   if (!userProfile?.tastes?.length) return showAuthView("edit");
@@ -2357,7 +2918,10 @@ async function showStationView(clearHistory = true) {
   $("album-title").textContent = currentAlbum.title;
   $("album-synopsis").textContent = currentAlbum.synopsis || "";
 
-  $("album-tags").innerHTML = (currentAlbum.tags || []).map((t) => `<span class="tag-pill">${escapeHtml(t)}</span>`).join("");
+  renderClickableGenrePills(
+    $("album-tags"),
+    extractCleanGenreTags(currentAlbum.tags, currentAlbum.genre, currentAlbum.artist)
+  );
   renderNotes($("reviews-list"), $("review-source-note"), currentAlbum.reviews, communityNotes);
   $("note-status").textContent = "";
   renderStationButtons();
@@ -2376,6 +2940,7 @@ function openStationAlbumDetail() {
     release_date: currentAlbum.release_date || null,
     runtime: currentAlbum.runtime,
     genre: currentAlbum.genre || currentAlbum.tags?.[0] || "",
+    tags: currentAlbum.tags || [],
     label: currentAlbum.label,
     synopsis: currentAlbum.synopsis,
     reviews: currentAlbum.reviews,
@@ -2384,7 +2949,7 @@ function openStationAlbumDetail() {
 }
 
 // ------------------------------------------------------------
-// Album Detail Page (+ List Picker & Verified Similar Albums)
+// Album Detail Page (+ Genre Tags, List Picker & Verified Similar Albums)
 // ------------------------------------------------------------
 function setIconBtnLabel(btnId, text) {
   const btn = $(btnId);
@@ -2447,6 +3012,7 @@ async function openAlbumDetail(input, push = true) {
     release_date: input.release_date || null,
     runtime: input.runtime || cat?.runtime || "",
     genre: input.genre || cat?.tags?.[0] || "",
+    tags: Array.isArray(input.tags) ? input.tags : (cat?.tags || []),
     label: input.label || cat?.label || "",
     synopsis: input.synopsis || cat?.synopsis || "",
     reviews: input.reviews || cat?.reviews || [],
@@ -2457,6 +3023,7 @@ async function openAlbumDetail(input, push = true) {
   currentRoute = { type: "album-detail", album: { ...activeDetailAlbum } };
   setActiveNav("album-detail");
 
+  const tagsEl = ensureAlbumDetailTagsContainer();
   $("detail-album-cover").src = activeDetailAlbum.cover_url;
   $("detail-album-cover").alt = `${activeDetailAlbum.title} by ${activeDetailAlbum.artist}`;
   $("detail-album-artist-btn").textContent = activeDetailAlbum.artist;
@@ -2464,6 +3031,11 @@ async function openAlbumDetail(input, push = true) {
   $("detail-album-year").textContent = activeDetailAlbum.release_year || "—";
   $("detail-album-runtime").textContent = activeDetailAlbum.runtime || "—";
   $("detail-album-genre").textContent = activeDetailAlbum.genre || "—";
+
+  const initialTags = extractCleanGenreTags(activeDetailAlbum.tags, activeDetailAlbum.genre, activeDetailAlbum.artist);
+  activeDetailAlbum.tags = initialTags;
+  renderClickableGenrePills(tagsEl, initialTags);
+
   $("detail-album-label").textContent = activeDetailAlbum.label || "";
   $("detail-preview-wrap").classList.add("hidden");
   $("detail-list-picker")?.classList.add("hidden");
@@ -2487,17 +3059,55 @@ async function openAlbumDetail(input, push = true) {
   renderDetailButtons();
   renderNotes($("detail-notes-list"), $("detail-notes-count"), activeDetailAlbum.reviews, communityNotes);
 
-  if (!activeDetailAlbum.synopsis) {
-    fetchLastFm("album.getInfo", { artist: activeDetailAlbum.artist, album: activeDetailAlbum.title, autocorrect: 1 }).then((info) => {
-      if (reqId !== detailReqId) return;
+  // Fetch synopsis + album tags (with automatic fallback to artist top tags)
+  (async () => {
+    const info = await fetchLastFm("album.getInfo", {
+      artist: activeDetailAlbum.artist,
+      album: activeDetailAlbum.title,
+      autocorrect: 1
+    });
+    if (reqId !== detailReqId) return;
+
+    if (!activeDetailAlbum.synopsis) {
       const summary = cleanLastFmWiki(info?.album?.wiki?.summary || "");
       if (summary) {
         activeDetailAlbum.synopsis = summary;
         $("detail-album-synopsis").textContent = summary;
         $("detail-album-synopsis").classList.remove("hidden");
       }
-    });
-  }
+    }
+
+    const lfmTagNames = toArray(info?.album?.tags?.tag).map((t) => t?.name).filter(Boolean);
+    let mergedGenres = extractCleanGenreTags(
+      [...(activeDetailAlbum.tags || []), ...lfmTagNames],
+      activeDetailAlbum.genre,
+      activeDetailAlbum.artist
+    );
+
+    if (mergedGenres.length < 2) {
+      const artistTagsData = await fetchLastFm("artist.getTopTags", {
+        artist: activeDetailAlbum.artist,
+        autocorrect: 1
+      });
+      if (reqId !== detailReqId) return;
+
+      const artistTagNames = toArray(artistTagsData?.toptags?.tag)
+        .slice(0, 8)
+        .map((t) => t?.name)
+        .filter(Boolean);
+
+      mergedGenres = extractCleanGenreTags(
+        [...mergedGenres, ...artistTagNames],
+        activeDetailAlbum.genre,
+        activeDetailAlbum.artist
+      );
+    }
+
+    if (mergedGenres.length) {
+      activeDetailAlbum.tags = mergedGenres;
+      renderClickableGenrePills(tagsEl, mergedGenres);
+    }
+  })();
 
   let colId = activeDetailAlbum.collectionId;
   if (!colId && !activeDetailAlbum.album_id?.startsWith("tbr-")) {
@@ -2556,7 +3166,13 @@ async function openAlbumDetail(input, push = true) {
         saveDetailInteraction({ saved: true, listened: false, is_tbr: true });
       }
     }
-    if (colMeta.primaryGenreName) $("detail-album-genre").textContent = colMeta.primaryGenreName;
+    if (colMeta.primaryGenreName) {
+      activeDetailAlbum.genre = colMeta.primaryGenreName;
+      $("detail-album-genre").textContent = colMeta.primaryGenreName;
+      const merged = extractCleanGenreTags(activeDetailAlbum.tags || [], colMeta.primaryGenreName, activeDetailAlbum.artist);
+      activeDetailAlbum.tags = merged;
+      renderClickableGenrePills(tagsEl, merged);
+    }
     if (colMeta.copyright && (!activeDetailAlbum.label || activeDetailAlbum.label === "—")) {
       $("detail-album-label").textContent = colMeta.copyright;
     }
@@ -2608,7 +3224,7 @@ async function loadSimilarAlbumsForDetail(album, reqId) {
   const simData = await fetchLastFm("artist.getSimilar", { artist: album.artist, limit: 14, autocorrect: 1 });
   if (reqId !== detailReqId) return;
 
-  const simArtists = (simData?.similarartists?.artist || []).map((a) => a.name).filter(Boolean).slice(0, 8);
+  const simArtists = toArray(simData?.similarartists?.artist).map((a) => a?.name).filter(Boolean).slice(0, 8);
 
   if (simArtists.length) {
     const responses = await Promise.all(
@@ -2618,8 +3234,8 @@ async function loadSimilarAlbumsForDetail(album, reqId) {
 
     for (let idx = 0; idx < responses.length && picks.length < 4; idx++) {
       const artistName = simArtists[idx];
-      const candidates = (responses[idx]?.topalbums?.album || []).filter(
-        (a) => a.name && !isJunkTitle(a.name) && !isEpTitle(a.name) && !seen.has(normalizeTitleKey(a.name, artistName))
+      const candidates = toArray(responses[idx]?.topalbums?.album).filter(
+        (a) => a?.name && !isJunkTitle(a.name) && !isEpTitle(a.name) && !seen.has(normalizeTitleKey(a.name, artistName))
       );
 
       for (const cand of candidates.slice(0, 4)) {
@@ -2644,7 +3260,7 @@ async function loadSimilarAlbumsForDetail(album, reqId) {
   if (picks.length < 4 && album.genre) {
     const tagData = await fetchLastFm("tag.getTopAlbums", { tag: album.genre.toLowerCase(), limit: 20 });
     if (reqId !== detailReqId) return;
-    for (const item of tagData?.albums?.album || []) {
+    for (const item of toArray(tagData?.albums?.album)) {
       if (picks.length >= 4) break;
       if (!item?.name || !item?.artist?.name || isJunkTitle(item.name) || isEpTitle(item.name)) continue;
       const key = normalizeTitleKey(item.name, item.artist.name);
@@ -2753,7 +3369,7 @@ function renderDetailListPicker() {
 }
 
 // ------------------------------------------------------------
-// Artist Detail Page (Avatar + Popularity Sort + Similar Artists with Avatars)
+// Artist Detail Page (Avatar + Popularity Sort + Similar Artists)
 // ------------------------------------------------------------
 function updateFavArtistBtn() {
   if (!activeDetailArtist || !userProfile) return;
@@ -2801,7 +3417,6 @@ async function openArtistDetail(input, push = true) {
   $("detail-artist-empty").classList.add("hidden");
   updateFavArtistBtn();
 
-  // Artist Portrait Avatar
   const artistAvatarEl = ensureArtistAvatarElement();
   renderAvatar(artistAvatarEl, "", activeDetailArtist.name);
   fetchArtistPhoto(activeDetailArtist.name).then((photoUrl) => {
@@ -2837,7 +3452,7 @@ async function openArtistDetail(input, push = true) {
   if (reqId !== artistReqId) return;
 
   const popByCleanTitle = new Map();
-  const topEntries = (topData?.topalbums?.album || []).filter((a) => a?.name);
+  const topEntries = toArray(topData?.topalbums?.album).filter((a) => a?.name);
   topEntries.forEach((a, idx) => {
     const clean = normalizeAlbumTitleForMatch(a.name);
     const score = Number(a.playcount || 0) || Math.max(1, 500 - idx);
@@ -2914,7 +3529,7 @@ async function loadSimilarArtistsForDetail(artistName, reqId) {
   const simData = await fetchLastFm("artist.getSimilar", { artist: artistName, limit: 10, autocorrect: 1 });
   if (reqId !== artistReqId) return;
 
-  const similar = (simData?.similarartists?.artist || []).filter((a) => a?.name).slice(0, 8);
+  const similar = toArray(simData?.similarartists?.artist).filter((a) => a?.name).slice(0, 8);
   if (!similar.length) return;
 
   similar.forEach((a) => {
@@ -2924,7 +3539,7 @@ async function loadSimilarArtistsForDetail(artistName, reqId) {
 }
 
 // ------------------------------------------------------------
-// Shelf View (Want / TBR / Listened / Lists + Exact Date Sorting + Cover Icons)
+// Shelf View (Want / TBR / Listened / Lists + Exact Date Sorting)
 // ------------------------------------------------------------
 async function showShelfView(clearHistory = true) {
   if (!sessionUser) return showAuthView("signin");
@@ -3389,7 +4004,7 @@ async function openPublicProfile(profile, push = true, asOwnTab = false) {
   $("public-name").textContent = profile.display_name;
   $("public-bio").textContent = profile.bio || "";
   $("public-bio").classList.toggle("hidden", !profile.bio);
-  $("public-tastes").innerHTML = (profile.tastes || []).map((t) => `<span class="tag-pill">${escapeHtml(t)}</span>`).join("");
+  renderClickableGenrePills($("public-tastes"), profile.tastes || []);
 
   const artistsEl = $("public-artists");
   artistsEl.innerHTML = "";
@@ -3409,7 +4024,6 @@ async function openPublicProfile(profile, push = true, asOwnTab = false) {
     artistsEl.classList.add("hidden");
   }
 
-  // Render Follow stats & Action buttons (Edit / Follow / Share)
   const { statsEl, actionsEl } = ensurePublicProfileControls();
   const [items, lists, followSummary] = await Promise.all([
     loadUserShelf(profile.user_id),
@@ -3479,7 +4093,6 @@ async function openPublicProfile(profile, push = true, asOwnTab = false) {
     actionsEl.appendChild(shareBtn);
   }
 
-  // Top 5 Favorite Albums
   const topFive = Array.isArray(profile.top_five_albums) ? profile.top_five_albums.slice(0, 5) : [];
   const topGrid = $("public-top-five-grid");
   topGrid.innerHTML = "";
@@ -3498,7 +4111,6 @@ async function openPublicProfile(profile, push = true, asOwnTab = false) {
     topGrid.appendChild(slot);
   });
 
-  // Annual Top 10 Badges
   publicShelfItems = items;
   publicLists = lists;
 
@@ -3903,6 +4515,12 @@ on("search-sort-select", "change", () => {
 on("artist-sort-select", "change", () => {
   activeArtistSort = $("artist-sort-select").value;
   if (activeArtistLps.length || activeArtistEps.length) renderArtistReleases();
+});
+
+on("genre-detail-back", "click", goBack);
+on("genre-sort-select", "change", () => {
+  activeGenreSort = $("genre-sort-select").value;
+  if (activeGenreAlbums.length) renderGenreAlbumsGrid();
 });
 
 // Mobile Shelf Column Toggle (Defaults cleanly to 2 columns)
