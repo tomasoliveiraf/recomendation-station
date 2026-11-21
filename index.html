@@ -358,7 +358,19 @@
     </div>
 
     <div id="search-albums-section" class="search-section hidden">
-      <h2 class="section-heading search-section-title">Albums</h2>
+      <div class="section-sort-header">
+        <h2 class="section-heading">Albums</h2>
+        <div class="inline-sort-wrap">
+          <label for="search-sort-select" class="meta-label">Sort by</label>
+          <select id="search-sort-select" class="sort-select">
+            <option value="popularity" selected>Popularity</option>
+            <option value="year-desc">Release date (Newest)</option>
+            <option value="year-asc">Release date (Oldest)</option>
+            <option value="title">Title (A–Z)</option>
+            <option value="artist">Artist (A–Z)</option>
+          </select>
+        </div>
+      </div>
       <div id="search-albums-grid" class="shelf-grid"></div>
     </div>
 
@@ -578,7 +590,18 @@
         <p id="detail-artist-genre" class="eyebrow">Artist</p>
         <h1 id="detail-artist-name" class="artist-page-title"></h1>
       </div>
-      <button id="detail-artist-fav-btn" class="taste-chip" type="button">+ Favorite artist</button>
+      <div class="artist-hero-controls">
+        <div class="inline-sort-wrap">
+          <label for="artist-sort-select" class="meta-label">Sort by</label>
+          <select id="artist-sort-select" class="sort-select">
+            <option value="popularity" selected>Popularity</option>
+            <option value="year-desc">Release date (Newest)</option>
+            <option value="year-asc">Release date (Oldest)</option>
+            <option value="title">Title (A–Z)</option>
+          </select>
+        </div>
+        <button id="detail-artist-fav-btn" class="taste-chip" type="button">+ Favorite artist</button>
+      </div>
     </div>
 
     <div id="artist-lps-section" class="artist-release-section hidden">

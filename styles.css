@@ -1454,6 +1454,28 @@ textarea:focus {
   border-bottom: 1px solid var(--border-subtle);
 }
 
+.section-sort-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.1rem;
+}
+
+.inline-sort-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.artist-hero-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  flex-wrap: wrap;
+}
+
 .artist-page-title {
   margin: 0.35rem 0 0;
   font-size: clamp(2.2rem, 4.8vw, 3.5rem);

@@ -92,6 +92,16 @@ let activeShelfSort = (() => {
 })();
 let lastSearchQuery = "";
 
+let lastSearchAlbums = [];
+let activeSearchSort = "popularity";
+let searchReqId = 0;
+
+let activeArtistLps = [];
+let activeArtistEps = [];
+let activeArtistSort = "popularity";
+
+const popularityCache = new Map();
+
 let activePublicProfile = null;
 let publicShelfItems = [];
 let activePublicShelfTab = "listened";
@@ -462,9 +472,40 @@ function extractLastFmCover(images = []) {
   return url && !url.includes("2a96cbd8b46e442fc41c2b86b821562f") ? url : "";
 }
 
+function normalizeAlbumTitleForMatch(title) {
+  return (title || "")
+    .toLowerCase()
+    .replace(/\s*[\(\[][^)\]]*(deluxe|remaster|expanded|anniversary|edition|version|bonus|special|live)[^)\]]*[\)\]]/gi, "")
+    .replace(/[^a-z0-9\u00C0-\u024F\s]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function sortAlbumsList(list, mode) {
+  const sorters = {
+    popularity: (a, b) =>
+      Number(b.popularity || 0) - Number(a.popularity || 0) ||
+      getReleaseDateSortKey(b, false) - getReleaseDateSortKey(a, false),
+    "year-desc": (a, b) =>
+      getReleaseDateSortKey(b, false) - getReleaseDateSortKey(a, false) ||
+      Number(b.popularity || 0) - Number(a.popularity || 0),
+    "year-asc": (a, b) =>
+      getReleaseDateSortKey(a, true) - getReleaseDateSortKey(b, true) ||
+      Number(b.popularity || 0) - Number(a.popularity || 0),
+    title: (a, b) => (a.title || "").localeCompare(b.title || ""),
+    artist: (a, b) => (a.artist || "").localeCompare(b.artist || "") || (a.title || "").localeCompare(b.title || "")
+  };
+  return [...list].sort(sorters[mode] || sorters.popularity);
+}
+
 async function fetchAlbumPopularity(artist, title) {
+  if (!artist || !title) return 0;
+  const key = normalizeTitleKey(title, artist);
+  if (popularityCache.has(key)) return popularityCache.get(key);
   const data = await fetchLastFm("album.getInfo", { artist, album: title, autocorrect: 1 });
-  return Number(data?.album?.listeners || 0) || 0;
+  const score = Number(data?.album?.listeners || 0) || 0;
+  popularityCache.set(key, score);
+  return score;
 }
 
 function fetchItunesJsonp(url) {
@@ -2300,6 +2341,25 @@ function updateFavArtistBtn() {
   $("detail-artist-fav-btn").textContent = isFav ? "Favorited artist" : "+ Favorite artist";
 }
 
+function renderArtistReleases() {
+  const fillGrid = (sectionId, countId, gridId, list, singular, plural) => {
+    const sec = $(sectionId);
+    if (!list.length) return sec.classList.add("hidden");
+    $(countId).textContent = `${list.length} ${list.length === 1 ? singular : plural}`;
+    const grid = $(gridId);
+    grid.innerHTML = "";
+    sortAlbumsList(list, activeArtistSort).forEach((payload) => {
+      const existing = shelfItems.find((s) => s.album_id === payload.album_id);
+      grid.appendChild(createAlbumCard(payload, { mode: "artist", existing }));
+    });
+    sec.classList.remove("hidden");
+  };
+
+  fillGrid("artist-lps-section", "artist-lps-count", "artist-lps-grid", activeArtistLps, "album", "albums");
+  fillGrid("artist-eps-section", "artist-eps-count", "artist-eps-grid", activeArtistEps, "EP", "EPs");
+  $("detail-artist-empty").classList.toggle("hidden", activeArtistLps.length > 0 || activeArtistEps.length > 0);
+}
+
 async function openArtistDetail(input, push = true) {
   if (!sessionUser) return showAuthView("signin");
   if (push) pushRoute();
@@ -2309,6 +2369,9 @@ async function openArtistDetail(input, push = true) {
   currentRoute = { type: "artist-detail", artist: { ...activeDetailArtist } };
   setActiveNav("artist-detail");
 
+  activeArtistLps = [];
+  activeArtistEps = [];
+  $("artist-sort-select").value = activeArtistSort;
   $("detail-artist-name").textContent = activeDetailArtist.name;
   $("detail-artist-genre").textContent = activeDetailArtist.genre || "Artist";
   $("detail-artist-status").textContent = "Loading discography...";
@@ -2318,6 +2381,7 @@ async function openArtistDetail(input, push = true) {
   updateFavArtistBtn();
 
   const shelfPromise = loadUserShelf(sessionUser.id);
+  const topAlbumsPromise = fetchLastFm("artist.getTopAlbums", { artist: activeDetailArtist.name, limit: 50, autocorrect: 1 });
   loadSimilarArtistsForDetail(activeDetailArtist.name, reqId);
 
   let artistId = activeDetailArtist.artistId;
@@ -2341,6 +2405,29 @@ async function openArtistDetail(input, push = true) {
 
   let lps = [];
   let eps = [];
+  const topData = await topAlbumsPromise;
+  if (reqId !== artistReqId) return;
+
+  // Build popularity map from artist's Last.fm top albums (1 single request)
+  const popByCleanTitle = new Map();
+  const topEntries = (topData?.topalbums?.album || []).filter((a) => a?.name);
+  topEntries.forEach((a, idx) => {
+    const clean = normalizeAlbumTitleForMatch(a.name);
+    const score = Number(a.playcount || 0) || Math.max(1, 500 - idx);
+    if (clean && (!popByCleanTitle.has(clean) || score > popByCleanTitle.get(clean))) {
+      popByCleanTitle.set(clean, score);
+    }
+  });
+
+  const resolveArtistAlbPopularity = (title) => {
+    const clean = normalizeAlbumTitleForMatch(title);
+    if (!clean) return 0;
+    if (popByCleanTitle.has(clean)) return popByCleanTitle.get(clean);
+    for (const [k, v] of popByCleanTitle.entries()) {
+      if (k.length >= 4 && (clean.startsWith(k) || k.startsWith(clean))) return v;
+    }
+    return 0;
+  };
 
   if (artistId) {
     const res = await lookupItunes(artistId, "album", 100);
@@ -2349,28 +2436,33 @@ async function openArtistDetail(input, push = true) {
     if (meta?.primaryGenreName) $("detail-artist-genre").textContent = meta.primaryGenreName;
 
     const seen = new Set();
-    const unique = res
-      .filter((r) => {
-        if (r.wrapperType !== "collection" || !isNonSingleRelease(r)) return false;
-        const k = r.collectionName.toLowerCase().trim();
-        if (seen.has(k)) return false;
-        seen.add(k);
-        return true;
-      })
-      .sort((a, b) => getReleaseDateSortKey({ release_date: b.releaseDate }) - getReleaseDateSortKey({ release_date: a.releaseDate }));
+    const unique = res.filter((r) => {
+      if (r.wrapperType !== "collection" || !isNonSingleRelease(r)) return false;
+      const k = r.collectionName.toLowerCase().trim();
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
 
-    lps = unique.filter((r) => classifyRelease(r) === "lp").map((r) => ({ ...toAlbumPayloadFromItunes(r), trackCount: r.trackCount }));
-    eps = unique.filter((r) => classifyRelease(r) === "ep").map((r) => ({ ...toAlbumPayloadFromItunes(r), trackCount: r.trackCount }));
+    const mapWithPop = (r) => ({
+      ...toAlbumPayloadFromItunes(r),
+      trackCount: r.trackCount,
+      popularity: resolveArtistAlbPopularity(r.collectionName)
+    });
+
+    lps = unique.filter((r) => classifyRelease(r) === "lp").map(mapWithPop);
+    eps = unique.filter((r) => classifyRelease(r) === "ep").map(mapWithPop);
   } else {
-    const topData = await fetchLastFm("artist.getTopAlbums", { artist: activeDetailArtist.name, limit: 25, autocorrect: 1 });
-    if (reqId !== artistReqId) return;
-    const raw = (topData?.topalbums?.album || []).filter((a) => a.name && !isJunkTitle(a.name));
+    const raw = topEntries.filter((a) => !isJunkTitle(a.name));
     const seen = new Set();
-    raw.forEach((a) => {
+    raw.forEach((a, idx) => {
       const k = a.name.toLowerCase().trim();
       if (seen.has(k)) return;
       seen.add(k);
-      const payload = toAlbumPayloadFromLastFm({ name: a.name, artist: a.artist?.name || activeDetailArtist.name, image: a.image });
+      const payload = {
+        ...toAlbumPayloadFromLastFm({ name: a.name, artist: a.artist?.name || activeDetailArtist.name, image: a.image }),
+        popularity: Number(a.playcount || 0) || Math.max(1, 500 - idx)
+      };
       if (isEpTitle(payload.title)) eps.push(payload);
       else lps.push(payload);
     });
@@ -2379,23 +2471,10 @@ async function openArtistDetail(input, push = true) {
   shelfItems = await shelfPromise;
   if (reqId !== artistReqId) return;
 
+  activeArtistLps = lps;
+  activeArtistEps = eps;
   $("detail-artist-status").textContent = "";
-
-  const fillGrid = (sectionId, countId, gridId, list, singular, plural) => {
-    if (!list.length) return;
-    $(countId).textContent = `${list.length} ${list.length === 1 ? singular : plural}`;
-    const grid = $(gridId);
-    grid.innerHTML = "";
-    list.forEach((payload) => {
-      const existing = shelfItems.find((s) => s.album_id === payload.album_id);
-      grid.appendChild(createAlbumCard(payload, { mode: "artist", existing }));
-    });
-    $(sectionId).classList.remove("hidden");
-  };
-
-  fillGrid("artist-lps-section", "artist-lps-count", "artist-lps-grid", lps, "album", "albums");
-  fillGrid("artist-eps-section", "artist-eps-count", "artist-eps-grid", eps, "EP", "EPs");
-  $("detail-artist-empty").classList.toggle("hidden", lps.length > 0 || eps.length > 0);
+  renderArtistReleases();
 }
 
 async function loadSimilarArtistsForDetail(artistName, reqId) {
@@ -3267,6 +3346,15 @@ $("shelf-sort-select").addEventListener("change", () => {
   try { localStorage.setItem(SHELF_SORT_KEY, activeShelfSort); } catch { /* ignore */ }
   renderShelf();
   if (activeShelfSort === "popularity") backfillPopularityIfNeeded();
+  $("search-sort-select").addEventListener("change", () => {
+  activeSearchSort = $("search-sort-select").value;
+  if (lastSearchAlbums.length) renderSearchAlbumsGrid();
+});
+
+$("artist-sort-select").addEventListener("change", () => {
+  activeArtistSort = $("artist-sort-select").value;
+  if (activeArtistLps.length || activeArtistEps.length) renderArtistReleases();
+});
 });
 
 function applyShelfMobileCols(cols) {
