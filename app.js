@@ -172,7 +172,7 @@ previewAudio.addEventListener("timeupdate", () => {
 previewAudio.addEventListener("ended", stopPreview);
 
 // ------------------------------------------------------------
-// Pure Helpers & Strict Anti-Single Classification
+// Pure Helpers, Capitalization & Strict Anti-Single Rules
 // ------------------------------------------------------------
 function escapeHtml(str) {
   const div = document.createElement("div");
@@ -197,6 +197,27 @@ function hashString(str) {
   return Math.abs(hash);
 }
 
+// Capitalizes names that are completely lowercase (e.g. "capitão fausto" -> "Capitão Fausto")
+// while preserving intentional casing like "D'Angelo", "MF DOOM", or "J Dilla"
+function formatDisplayNameCase(name) {
+  if (!name) return "";
+  const trimmed = name.trim();
+  if (trimmed !== trimmed.toLowerCase()) return trimmed;
+  const minor = new Set(["de", "da", "do", "das", "dos", "e", "of", "the", "and", "in", "on", "at", "for", "to", "a"]);
+  return trimmed
+    .split(/\s+/)
+    .map((word, idx) => (idx > 0 && minor.has(word) ? word : word.charAt(0).toUpperCase() + word.slice(1)))
+    .join(" ");
+}
+
+function fixReasonCapitalization(text) {
+  if (!text) return "";
+  return text.replace(
+    /(because you listen to )([^.]+)/i,
+    (_, prefix, artist) => `${prefix}${formatDisplayNameCase(artist)}`
+  );
+}
+
 function lowercaseFirst(str) {
   return str ? str.charAt(0).toLowerCase() + str.slice(1) : "";
 }
@@ -211,17 +232,25 @@ function formatDuration(ms) {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
-function isFutureReleaseDate(dateStr) {
-  if (!dateStr) return false;
-  const d = new Date(dateStr);
-  if (Number.isNaN(d.getTime())) return false;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return d > today;
+function getDateSeed(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function isFutureReleaseDate(dateStr, yearStr = "") {
+  const todayIso = getDateSeed(new Date());
+  if (dateStr) {
+    const iso = String(dateStr).slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso > todayIso;
+    const d = new Date(dateStr);
+    if (!Number.isNaN(d.getTime())) return getDateSeed(d) > todayIso;
+  }
+  const y = parseInt(yearStr, 10);
+  return !Number.isNaN(y) && y > new Date().getFullYear();
 }
 
 function isItemTbr(item) {
-  return Boolean(item && !item.listened && (item.is_tbr || (item.saved && isFutureReleaseDate(item.release_date))));
+  if (!item || item.listened) return false;
+  return Boolean(item.is_tbr || (item.saved && isFutureReleaseDate(item.release_date, item.release_year)));
 }
 
 function formatShortReleaseDate(dateStr) {
@@ -237,14 +266,19 @@ function isSingleTitle(title) {
   return /(\s*[-–—]\s*single|\(single\)|\[single\]|\bsingle)$/i.test(title.trim());
 }
 
+function isEpTitle(title) {
+  if (!title) return false;
+  return /(\s*[-–—]\s*ep|\(ep\)|\[ep\]|\bep)$/i.test(title.trim());
+}
+
 function classifyRelease(item) {
   const name = (item.collectionName || item.title || "").trim();
   const count = Number(item.trackCount || 0);
 
   if (isSingleTitle(name)) return "single";
-  if (/(\s*[-–—]\s*ep|\(ep\)|\[ep\]|\bep)$/i.test(name)) return "ep";
-  if (count > 0 && count <= 2) return "single";
-  if (count >= 3 && count <= 4) return "ep";
+  if (isEpTitle(name)) return "ep";
+  if (count > 0 && count <= 3) return "single";
+  if (count === 4) return "ep";
   return "lp";
 }
 
@@ -261,6 +295,25 @@ function isJunkTitle(title) {
     isSingleTitle(t) ||
     /\b(greatest hits|best of|the essentials|anthology|collection|karaoke|tribute to)\b/i.test(t)
   );
+}
+
+// Strict LP runtime/tracklist check so singles and short EPs are NEVER recommended
+function passesFullAlbumCheck(tracks) {
+  if (!Array.isArray(tracks) || tracks.length < 5) return false;
+  const totalMinutes = tracks.reduce((sum, t) => sum + (t.trackTimeMillis || 0), 0) / 60000;
+  if (totalMinutes === 0) return tracks.length >= 6;
+  return totalMinutes >= 18 || (tracks.length >= 7 && totalMinutes >= 15);
+}
+
+function isStoredPickInvalid(pick) {
+  if (!pick) return true;
+  if (isSingleTitle(pick.title) || isEpTitle(pick.title)) return true;
+  if (!pick.itunes_collection_id) return true;
+  const minMatch = (pick.runtime || "").match(/^(\d+)\s*min/i);
+  if (minMatch && Number(minMatch[1]) < 15) return true;
+  const trackMatch = (pick.runtime || "").match(/^(\d+)\s*track/i);
+  if (trackMatch && Number(trackMatch[1]) < 5) return true;
+  return false;
 }
 
 function cleanCopyrightToLabel(copyright) {
@@ -340,12 +393,6 @@ async function fetchAlbumPopularity(artist, title) {
   return Number(data?.album?.listeners || 0) || 0;
 }
 
-function extractLastFmCover(images = []) {
-  if (!Array.isArray(images)) return "";
-  const url = (images.find((i) => i.size === "mega") || images.find((i) => i.size === "extralarge") || images.find((i) => i.size === "large"))?.["#text"] || "";
-  return url && !url.includes("2a96cbd8b46e442fc41c2b86b821562f") ? url : "";
-}
-
 function fetchItunesJsonp(url) {
   return new Promise((resolve, reject) => {
     const cb = `itunesCb_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
@@ -377,7 +424,6 @@ const lookupItunes = (id, entity, limit = 60) =>
 
 const toHighResCover = (url) => (url ? url.replace(/100x100bb/i, "800x800bb") : "");
 
-// Single source of truth for album searches across the entire app: zero singles allowed
 async function searchNonSingleAlbums(term, limit = 6) {
   const raw = await queryItunes(term, "album", Math.min(50, limit * 3));
   const seen = new Set();
@@ -424,16 +470,12 @@ async function resolveAlbumCover(album) {
 }
 
 // ------------------------------------------------------------
-// Daily Recommendation Engine (Strictly Full Albums / Zero Singles)
+// Daily Recommendation Engine (Strictly Verified Full-Length LPs)
 // ------------------------------------------------------------
 function getActiveDate() {
   const d = new Date();
   d.setDate(d.getDate() + dayOffset);
   return d;
-}
-
-function getDateSeed(d) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 function formatDisplayDate(d) {
@@ -459,158 +501,141 @@ function buildExcludedSets(profile, pastPicks, userShelf) {
 function isExcludedCandidate(title, artist, excluded) {
   return (
     isJunkTitle(title) ||
+    isEpTitle(title) ||
     excluded.titles.has((title || "").toLowerCase().trim()) ||
     excluded.keys.has(normalizeTitleKey(title, artist))
   );
 }
 
-// Verify a Last.fm candidate against iTunes + Last.fm tracklist to guarantee it is NOT a single
-async function validateAndEnrichCandidate(candidate) {
-  const [infoData, itunesRaw] = await Promise.all([
-    fetchLastFm("album.getInfo", { artist: candidate.artist, album: candidate.title, autocorrect: 1 }),
-    queryItunes(`${candidate.artist} ${candidate.title}`, "album", 8)
+// Verify an iTunes collection is truly a full-length LP (>= 5 tracks & >= 18 min), then enrich with Last.fm
+async function verifyAndBuildPickFromItunes(itunesAlbum, reason) {
+  if (!itunesAlbum?.collectionId || classifyRelease(itunesAlbum) !== "lp") return null;
+  if (Number(itunesAlbum.trackCount || 0) < 5) return null;
+
+  const [lookupRes, infoData] = await Promise.all([
+    lookupItunes(itunesAlbum.collectionId, "song", 100),
+    fetchLastFm("album.getInfo", { artist: itunesAlbum.artistName, album: itunesAlbum.collectionName, autocorrect: 1 })
   ]);
 
+  const tracks = lookupRes.filter((r) => r.wrapperType === "track");
+  if (!passesFullAlbumCheck(tracks)) return null;
+
+  const totalMs = tracks.reduce((sum, t) => sum + (t.trackTimeMillis || 0), 0);
+  const runtime = totalMs > 0 ? `${Math.round(totalMs / 60000)} min` : `${tracks.length} tracks`;
+
   const lfmInfo = infoData?.album || {};
-  const lfmTracksRaw = lfmInfo.tracks?.track;
-  const lfmTrackCount = Array.isArray(lfmTracksRaw) ? lfmTracksRaw.length : lfmTracksRaw ? 1 : 0;
-
-  const titleNeedle = candidate.title.toLowerCase().slice(0, 10);
-  const artistNeedle = candidate.artist.toLowerCase().slice(0, 8);
-
-  // Strict LP-first matching on iTunes (rejects singles completely)
-  const nonSingles = itunesRaw.filter((r) => {
-    if (!isNonSingleRelease(r)) return false;
-    const sameArtist = r.artistName.toLowerCase().includes(artistNeedle) || artistNeedle.includes(r.artistName.toLowerCase().slice(0, 6));
-    const sameTitle = r.collectionName.toLowerCase().includes(titleNeedle) || titleNeedle.includes(r.collectionName.toLowerCase().slice(0, 8));
-    return sameArtist && sameTitle;
-  });
-
-  const lpMatch = nonSingles.find((r) => classifyRelease(r) === "lp" && Number(r.trackCount || 0) >= 5);
-  const epMatch = nonSingles.find((r) => classifyRelease(r) === "ep" && Number(r.trackCount || 0) >= 4);
-  const itunesMatch = lpMatch || epMatch || null;
-
-  // Reject if iTunes says it's a single OR if neither iTunes nor Last.fm confirms >= 4 tracks
-  const itunesFoundSingleOnly = !itunesMatch && itunesRaw.some(
-    (r) => r.collectionName?.toLowerCase().includes(titleNeedle) && classifyRelease(r) === "single"
-  );
-  if (itunesFoundSingleOnly) return null;
-  if (!itunesMatch && lfmTrackCount < 4) return null;
-
   const lfmTags = (lfmInfo.tags?.tag || [])
     .map((t) => t.name)
     .filter((n) => n && n.length < 28 && !/^\d{4}$/.test(n))
     .slice(0, 4);
 
-  let runtime = "—";
-  let releaseYear = "—";
-  let label = "—";
-  let genre = lfmTags[0] || "Album";
-  let coverUrl = candidate.coverFallback || extractLastFmCover(lfmInfo.image) || "";
-  let collectionId = null;
-  let artistId = null;
-
-  if (itunesMatch) {
-    collectionId = String(itunesMatch.collectionId);
-    artistId = itunesMatch.artistId ? String(itunesMatch.artistId) : null;
-    coverUrl = toHighResCover(itunesMatch.artworkUrl100) || coverUrl;
-    releaseYear = itunesMatch.releaseDate ? itunesMatch.releaseDate.slice(0, 4) : "—";
-    label = cleanCopyrightToLabel(itunesMatch.copyright);
-    if (itunesMatch.primaryGenreName) genre = itunesMatch.primaryGenreName;
-
-    const tracks = (await lookupItunes(collectionId, "song", 100)).filter((r) => r.wrapperType === "track");
-    if (tracks.length > 0 && tracks.length <= 2) return null; // Final safety net against mislabeled singles
-    const totalMs = tracks.reduce((sum, t) => sum + (t.trackTimeMillis || 0), 0);
-    runtime = totalMs > 0 ? `${Math.round(totalMs / 60000)} min` : itunesMatch.trackCount ? `${itunesMatch.trackCount} tracks` : "—";
-  }
-
+  const genre = itunesAlbum.primaryGenreName || lfmTags[0] || "Album";
   const finalTags = lfmTags.length > 0 ? lfmTags : [genre];
-  const slug = `${candidate.artist}-${candidate.title}`.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
   const synopsis = cleanLastFmWiki(lfmInfo.wiki?.summary || lfmInfo.wiki?.content || "");
+  const cleanReason = fixReasonCapitalization(reason);
 
   return {
-    album_id: collectionId ? `itunes-${collectionId}` : `lfm-${slug}`,
-    title: itunesMatch?.collectionName || lfmInfo.name || candidate.title,
-    artist: itunesMatch?.artistName || lfmInfo.artist || candidate.artist,
-    cover_url: coverUrl,
-    release_year: releaseYear,
+    album_id: `itunes-${itunesAlbum.collectionId}`,
+    title: itunesAlbum.collectionName,
+    artist: itunesAlbum.artistName,
+    cover_url: toHighResCover(itunesAlbum.artworkUrl100),
+    release_year: itunesAlbum.releaseDate ? itunesAlbum.releaseDate.slice(0, 4) : "—",
     runtime,
-    label,
+    label: cleanCopyrightToLabel(itunesAlbum.copyright),
     genre,
     tags: finalTags,
-    synopsis: synopsis || `Selected for your station ${lowercaseFirst(candidate.reason)}. Open full details to preview tracks and leave your impression.`,
+    synopsis:
+      synopsis ||
+      `Selected for your station ${lowercaseFirst(cleanReason)}. Open full details to preview tracks and leave your impression.`,
     aesthetic: pickAestheticForTags(finalTags),
-    reason: candidate.reason,
-    itunes_collection_id: collectionId,
-    itunes_artist_id: artistId
+    reason: cleanReason,
+    itunes_collection_id: String(itunesAlbum.collectionId),
+    itunes_artist_id: itunesAlbum.artistId ? String(itunesAlbum.artistId) : null
   };
+}
+
+// Fetch studio LPs directly from an artist's iTunes discography (zero singles)
+async function fetchArtistItunesLps(artistName, excluded) {
+  const matches = await queryItunes(artistName, "musicArtist", 4);
+  const best = matches.find((a) => a.artistName?.toLowerCase() === artistName.toLowerCase()) || matches[0];
+  if (!best?.artistId) return [];
+
+  const releases = await lookupItunes(best.artistId, "album", 60);
+  const seen = new Set();
+  return releases.filter((r) => {
+    if (r.wrapperType !== "collection" || !r.collectionName) return false;
+    if (classifyRelease(r) !== "lp" || Number(r.trackCount || 0) < 5) return false;
+    if (isFutureReleaseDate(r.releaseDate)) return false;
+    if (isExcludedCandidate(r.collectionName, r.artistName || artistName, excluded)) return false;
+    const key = r.collectionName.toLowerCase().trim();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 async function generateDynamicDailyPick(profile, dateSeed, excluded) {
   const favArtists = profile?.favorite_artists || [];
   const tastes = profile?.tastes || [];
   const dayHash = hashString(`${profile.user_id}|${dateSeed}`);
-  const candidates = [];
 
-  async function collectFromSimilarArtists() {
-    if (!favArtists.length) return;
-    const seedArtist = favArtists[dayHash % favArtists.length];
-    const simData = await fetchLastFm("artist.getSimilar", { artist: seedArtist, limit: 20, autocorrect: 1 });
-    const canonicalSeed = simData?.similarartists?.["@attr"]?.artist || seedArtist;
+  async function tryBySimilarArtist() {
+    if (!favArtists.length) return null;
+    const seedRaw = favArtists[dayHash % favArtists.length];
+    const simData = await fetchLastFm("artist.getSimilar", { artist: seedRaw, limit: 20, autocorrect: 1 });
+    const seedDisplay = formatDisplayNameCase(simData?.similarartists?.["@attr"]?.artist || seedRaw);
+
     const similar = (simData?.similarartists?.artist || []).filter(
       (a) => a.name && !favArtists.some((f) => f.toLowerCase() === a.name.toLowerCase())
     );
 
-    for (let i = 0; i < Math.min(3, similar.length); i++) {
-      const artistName = similar[(dayHash + i * 3) % similar.length].name;
-      const topData = await fetchLastFm("artist.getTopAlbums", { artist: artistName, limit: 15, autocorrect: 1 });
-      const valid = (topData?.topalbums?.album || []).filter(
-        (alb) => alb.name && !isExcludedCandidate(alb.name, artistName, excluded)
-      );
-      valid.slice(0, 3).forEach((alb) => {
-        candidates.push({
-          title: alb.name,
-          artist: alb.artist?.name || artistName,
-          reason: `Because you listen to ${canonicalSeed}`,
-          coverFallback: extractLastFmCover(alb.image)
-        });
-      });
+    for (let i = 0; i < Math.min(5, similar.length); i++) {
+      const targetArtist = similar[(dayHash + i * 3) % similar.length].name;
+      const lps = await fetchArtistItunesLps(targetArtist, excluded);
+      if (!lps.length) continue;
+
+      const chosenLp = lps[(dayHash + i) % lps.length];
+      const verified = await verifyAndBuildPickFromItunes(chosenLp, `Because you listen to ${seedDisplay}`);
+      if (verified) return verified;
     }
+    return null;
   }
 
-  async function collectFromTasteTag() {
+  async function tryByTasteTag() {
     const taste = tastes.length ? tastes[dayHash % tastes.length] : "Indie";
     const mapped = TASTE_TO_LASTFM_TAGS[taste] || [taste.toLowerCase()];
     const tag = mapped[dayHash % mapped.length];
-    const tagData = await fetchLastFm("tag.getTopAlbums", { tag, limit: 35, page: (dayHash % 3) + 1 });
-    const valid = (tagData?.albums?.album || []).filter(
+    const tagData = await fetchLastFm("tag.getTopAlbums", { tag, limit: 40, page: (dayHash % 3) + 1 });
+
+    const rawCandidates = (tagData?.albums?.album || []).filter(
       (alb) => alb.name && alb.artist?.name && !isExcludedCandidate(alb.name, alb.artist.name, excluded)
     );
-    for (let i = 0; i < Math.min(6, valid.length); i++) {
-      const alb = valid[(dayHash + i * 5) % valid.length];
-      candidates.push({
-        title: alb.name,
-        artist: alb.artist.name,
-        reason: `From your ${taste} tastes`,
-        coverFallback: extractLastFmCover(alb.image)
+
+    for (let i = 0; i < Math.min(8, rawCandidates.length); i++) {
+      const cand = rawCandidates[(dayHash + i * 5) % rawCandidates.length];
+      const itunesRes = await queryItunes(`${cand.artist.name} ${cand.name}`, "album", 6);
+      const titleNeedle = cand.name.toLowerCase().slice(0, 10);
+      const artistNeedle = cand.artist.name.toLowerCase().slice(0, 8);
+
+      const lpMatch = itunesRes.find((r) => {
+        if (classifyRelease(r) !== "lp" || Number(r.trackCount || 0) < 5) return false;
+        if (isFutureReleaseDate(r.releaseDate)) return false;
+        const sameTitle = r.collectionName?.toLowerCase().includes(titleNeedle);
+        const sameArtist = r.artistName?.toLowerCase().includes(artistNeedle);
+        return sameTitle && sameArtist;
       });
+
+      if (!lpMatch) continue;
+      const verified = await verifyAndBuildPickFromItunes(lpMatch, `From your ${taste} tastes`);
+      if (verified) return verified;
     }
+    return null;
   }
 
   if (favArtists.length > 0 && dayHash % 5 !== 0) {
-    await collectFromSimilarArtists();
-    if (candidates.length < 3) await collectFromTasteTag();
-  } else {
-    await collectFromTasteTag();
-    if (candidates.length < 3) await collectFromSimilarArtists();
+    return (await tryBySimilarArtist()) || (await tryByTasteTag());
   }
-
-  // Test candidates until one passes strict non-single verification
-  for (const cand of candidates.slice(0, 8)) {
-    const verified = await validateAndEnrichCandidate(cand);
-    if (verified) return verified;
-  }
-  return null;
+  return (await tryByTasteTag()) || (await tryBySimilarArtist());
 }
 
 function getFallbackCatalogRecommendation(profile, date, excludedKeys) {
@@ -696,7 +721,8 @@ async function loadCommunityNotes(albumId) {
 }
 
 async function upsertAlbumOnShelf(albumData) {
-  const autoTbr = Boolean(albumData.is_tbr) || (Boolean(albumData.saved) && !albumData.listened && isFutureReleaseDate(albumData.release_date));
+  const isFuture = isFutureReleaseDate(albumData.release_date, albumData.release_year);
+  const autoTbr = !albumData.listened && (Boolean(albumData.is_tbr) || (Boolean(albumData.saved) && isFuture));
   let pop = Number(albumData.popularity || 0);
   if (!pop && albumData.artist && albumData.title && !autoTbr) {
     pop = await fetchAlbumPopularity(albumData.artist, albumData.title);
@@ -780,7 +806,7 @@ function renderNotes(listEl, countEl, curated = [], community = []) {
 
 function createAlbumCard(item, { mode = "artist", existing = null, onShelfChanged = null } = {}) {
   const isTbr = isItemTbr(item);
-  const isFuture = isFutureReleaseDate(item.release_date);
+  const isFuture = isFutureReleaseDate(item.release_date, item.release_year);
   const noteText = item.positive_note ? escapeHtml(item.positive_note) : "";
   const payload = {
     album_id: item.album_id,
@@ -809,9 +835,13 @@ function createAlbumCard(item, { mode = "artist", existing = null, onShelfChange
 
   let actionsHtml = "";
   if (mode === "shelf") {
+    const toggleTbrBtn = !item.listened
+      ? `<button class="text-btn js-toggle-tbr" type="button">${isTbr ? "Move to Want" : "Move to TBR"}</button>`
+      : "";
     actionsHtml = `
       <div class="shelf-card-actions">
         <button class="text-btn js-switch-shelf" type="button">${item.listened ? "Move to Want" : "Mark Listened"}</button>
+        ${toggleTbrBtn}
         <button class="text-btn js-edit-note" type="button">${noteText ? "Edit note" : "Add note"}</button>
         <button class="text-btn js-remove-shelf" type="button">Remove</button>
       </div>
@@ -823,11 +853,14 @@ function createAlbumCard(item, { mode = "artist", existing = null, onShelfChange
         </div>
       </div>`;
   } else if (mode === "search") {
-    const onWant = existing?.saved && !existing?.listened;
+    const onTbr = existing && isItemTbr(existing);
+    const onWant = existing?.saved && !existing?.listened && !onTbr;
     const onListened = existing?.listened;
     actionsHtml = `
       <div class="search-quick-actions">
-        <button class="mini-btn js-want ${onWant ? "active" : ""}" type="button">${onWant ? (isFuture ? "On TBR" : "On Want") : isFuture ? "+ TBR" : "+ Want"}</button>
+        <button class="mini-btn js-want ${onWant || onTbr ? "active" : ""}" type="button">${
+          onTbr ? "On TBR" : onWant ? "On Want" : isFuture ? "+ TBR" : "+ Want"
+        }</button>
         <button class="mini-btn js-listened ${onListened ? "active" : ""}" type="button">${onListened ? "Listened" : "+ Listened"}</button>
       </div>`;
   }
@@ -854,6 +887,17 @@ function createAlbumCard(item, { mode = "artist", existing = null, onShelfChange
     card.querySelector(".js-switch-shelf").addEventListener("click", async () => {
       const nextListened = !item.listened;
       await upsertAlbumOnShelf({ ...item, listened: nextListened, saved: !nextListened, is_tbr: false });
+      onShelfChanged?.();
+    });
+    card.querySelector(".js-toggle-tbr")?.addEventListener("click", async () => {
+      const nextTbr = !isTbr;
+      await upsertAlbumOnShelf({
+        ...item,
+        saved: true,
+        listened: false,
+        is_tbr: nextTbr,
+        release_date: nextTbr ? item.release_date : null
+      });
       onShelfChanged?.();
     });
     card.querySelector(".js-remove-shelf").addEventListener("click", async () => {
@@ -1074,7 +1118,7 @@ function setAuthMode(mode) {
     $("bio-input").value = userProfile.bio || "";
     draftAvatarUrl = userProfile.avatar_url || "";
     renderTasteSelector(userProfile.tastes || []);
-    draftArtists = [...(userProfile.favorite_artists || [])];
+    draftArtists = (userProfile.favorite_artists || []).map(formatDisplayNameCase);
     draftTopFive = Array.isArray(userProfile.top_five_albums) ? userProfile.top_five_albums.slice(0, 5) : [];
     refreshArtistChips();
     renderTopFiveEditor();
@@ -1117,7 +1161,7 @@ async function saveStationInteraction(patch) {
   currentInteraction = { ...currentInteraction, ...patch };
   renderStationButtons();
   try {
-    await upsertAlbumOnShelf({
+    currentInteraction = await upsertAlbumOnShelf({
       album_id: currentAlbum.id,
       title: currentAlbum.title,
       artist: currentAlbum.artist,
@@ -1128,6 +1172,7 @@ async function saveStationInteraction(patch) {
       is_tbr: false,
       positive_note: currentInteraction.positive_note || null
     });
+    renderStationButtons();
   } catch {
     $("note-status").textContent = "Could not save";
   }
@@ -1144,9 +1189,9 @@ function mapStoredPickToAlbum(p) {
     label: p.label || "—",
     genre: p.genre || "",
     tags: p.tags || [],
-    synopsis: p.synopsis || "",
+    synopsis: fixReasonCapitalization(p.synopsis || ""),
     aesthetic: p.aesthetic || "editorial",
-    reason: p.reason || `Curated for ${userProfile.display_name}`,
+    reason: fixReasonCapitalization(p.reason || `Curated for ${userProfile.display_name}`),
     coverUrl: p.cover_url || "",
     collectionId: p.itunes_collection_id || null,
     artistId: p.itunes_artist_id || null,
@@ -1180,7 +1225,9 @@ async function showStationView(clearHistory = true) {
   if (reqId !== stationReqId) return;
 
   let resolvedAlbum = null;
-  if (storedPick) {
+
+  // If a previously stored pick was a single/EP or unverified, regenerate a true LP automatically
+  if (storedPick && !isStoredPickInvalid(storedPick)) {
     resolvedAlbum = mapStoredPickToAlbum(storedPick);
   } else {
     const [pastPicks, myShelf] = await Promise.all([loadPastDailyPicks(sessionUser.id), loadUserShelf(sessionUser.id)]);
@@ -1273,13 +1320,14 @@ async function saveDetailInteraction(patch) {
   activeDetailInteraction = { ...activeDetailInteraction, ...patch };
   renderDetailButtons();
   try {
-    await upsertAlbumOnShelf({
+    activeDetailInteraction = await upsertAlbumOnShelf({
       ...activeDetailAlbum,
       saved: activeDetailInteraction.saved,
       listened: activeDetailInteraction.listened,
       is_tbr: activeDetailInteraction.is_tbr,
       positive_note: activeDetailInteraction.positive_note || null
     });
+    renderDetailButtons();
   } catch {
     $("detail-note-status").textContent = "Could not save";
   }
@@ -1380,14 +1428,24 @@ async function openAlbumDetail(input, push = true) {
 
   if (colMeta) {
     activeDetailAlbum.artistId = activeDetailAlbum.artistId || colMeta.artistId;
-    activeDetailAlbum.release_date = activeDetailAlbum.release_date || colMeta.releaseDate || null;
+    activeDetailAlbum.release_date = colMeta.releaseDate || activeDetailAlbum.release_date || null;
     if (!activeDetailAlbum.cover_url && colMeta.artworkUrl100) {
       activeDetailAlbum.cover_url = toHighResCover(colMeta.artworkUrl100);
       $("detail-album-cover").src = activeDetailAlbum.cover_url;
     }
-    if (colMeta.releaseDate && (!activeDetailAlbum.release_year || activeDetailAlbum.release_year === "—")) {
-      activeDetailAlbum.release_year = colMeta.releaseDate.slice(0, 4);
-      $("detail-album-year").textContent = activeDetailAlbum.release_year;
+    if (colMeta.releaseDate) {
+      const y = colMeta.releaseDate.slice(0, 4);
+      if (!activeDetailAlbum.release_year || activeDetailAlbum.release_year === "—") {
+        activeDetailAlbum.release_year = y;
+      }
+      $("detail-album-year").textContent = isFutureReleaseDate(colMeta.releaseDate)
+        ? formatShortReleaseDate(colMeta.releaseDate)
+        : activeDetailAlbum.release_year;
+
+      // Auto-promote to TBR if user already saved this future release to Want to listen
+      if (activeDetailInteraction.saved && !activeDetailInteraction.listened && !activeDetailInteraction.is_tbr && isFutureReleaseDate(colMeta.releaseDate)) {
+        saveDetailInteraction({ saved: true, listened: false, is_tbr: true });
+      }
     }
     if (colMeta.primaryGenreName) $("detail-album-genre").textContent = colMeta.primaryGenreName;
     if (colMeta.copyright && (!activeDetailAlbum.label || activeDetailAlbum.label === "—")) {
@@ -1443,7 +1501,7 @@ async function openArtistDetail(input, push = true) {
   if (push) pushRoute();
 
   const reqId = ++artistReqId;
-  activeDetailArtist = { artistId: input.artistId || null, name: input.name || "Artist", genre: input.genre || "" };
+  activeDetailArtist = { artistId: input.artistId || null, name: formatDisplayNameCase(input.name || "Artist"), genre: input.genre || "" };
   currentRoute = { type: "artist-detail", artist: { ...activeDetailArtist } };
   setActiveNav("artist-detail");
 
@@ -1770,7 +1828,8 @@ async function openPublicProfile(profile, push = true) {
   artistsEl.innerHTML = "";
   if (profile.favorite_artists?.length) {
     artistsEl.innerHTML = `<span class="meta-label">Favorite artists:</span>`;
-    profile.favorite_artists.forEach((name) => {
+    profile.favorite_artists.forEach((rawName) => {
+      const name = formatDisplayNameCase(rawName);
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "text-btn";
@@ -1944,6 +2003,11 @@ $("detail-album-artist-btn").addEventListener("click", () =>
 );
 
 $("detail-want-btn").addEventListener("click", () => {
+  const isFuture = isFutureReleaseDate(activeDetailAlbum?.release_date, activeDetailAlbum?.release_year);
+  if (isFuture) {
+    const onTbr = isItemTbr(activeDetailInteraction);
+    return saveDetailInteraction({ is_tbr: !onTbr, saved: !onTbr, listened: false });
+  }
   const on = Boolean(activeDetailInteraction.saved && !activeDetailInteraction.listened && !isItemTbr(activeDetailInteraction));
   saveDetailInteraction({ saved: !on, listened: false, is_tbr: false });
 });
@@ -1993,7 +2057,7 @@ $("album-search-input").addEventListener("input", handleOnboardingAlbumSearch);
 $("artist-search-input").addEventListener("keydown", (e) => {
   if (e.key !== "Enter") return;
   e.preventDefault();
-  const val = e.target.value.trim();
+  const val = formatDisplayNameCase(e.target.value.trim());
   if (val && !draftArtists.some((a) => a.toLowerCase() === val.toLowerCase())) {
     draftArtists.push(val);
     refreshArtistChips();
@@ -2017,7 +2081,7 @@ $("auth-form").addEventListener("submit", async (e) => {
         bio: $("bio-input").value.trim(),
         avatar_url: draftAvatarUrl,
         tastes,
-        favorite_artists: draftArtists,
+        favorite_artists: draftArtists.map(formatDisplayNameCase),
         favorite_albums: draftTopFive.map((a) => `${a.title} — ${a.artist}`),
         top_five_albums: draftTopFive
       };
