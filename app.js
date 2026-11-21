@@ -2,6 +2,7 @@ const SUPABASE_URL = "https://kenilapjkhfgyyyqfcog.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_vCjojbNSbAWFeXXacnxYJA_M0PxLvKI";
 const LASTFM_API_KEY = "206b77af8d8f6e6edeafd71d306992ea";
 
+const ITUNES_COUNTRY = "PT";
 const COVER_CACHE_KEY = "recommentation_station_covers_v1";
 const THEME_KEY = "recommentation_station_theme_v1";
 const PREVIEW_MAX_SECONDS = 15;
@@ -416,27 +417,55 @@ async function fetchItunesRaw(url) {
   }
 }
 
-const queryItunes = (term, entity, limit = 6) =>
-  fetchItunesRaw(`https://itunes.apple.com/search?term=${encodeURIComponent(term)}&entity=${entity}&limit=${limit}`);
+const queryItunes = (term, entity, limit = 6, attribute = "") => {
+  const attr = attribute ? `&attribute=${attribute}` : "";
+  return fetchItunesRaw(
+    `https://itunes.apple.com/search?term=${encodeURIComponent(term)}&media=music&country=${ITUNES_COUNTRY}&entity=${entity}${attr}&limit=${limit}`
+  );
+};
 
 const lookupItunes = (id, entity, limit = 60) =>
-  fetchItunesRaw(`https://itunes.apple.com/lookup?id=${encodeURIComponent(id)}&entity=${entity}&limit=${limit}`);
+  fetchItunesRaw(
+    `https://itunes.apple.com/lookup?id=${encodeURIComponent(id)}&country=${ITUNES_COUNTRY}&entity=${entity}&limit=${limit}`
+  );
 
 const toHighResCover = (url) => (url ? url.replace(/100x100bb/i, "800x800bb") : "");
 
-async function searchNonSingleAlbums(term, limit = 6) {
-  const raw = await queryItunes(term, "album", Math.min(50, limit * 3));
+async function searchNonSingleAlbums(term, limit = 12) {
+  const [byTitle, general] = await Promise.all([
+    queryItunes(term, "album", 30, "albumTerm"),
+    queryItunes(term, "album", 50)
+  ]);
+
+  const needle = term.toLowerCase().trim();
+  const words = needle.split(/\s+/).filter(Boolean);
   const seen = new Set();
-  const clean = [];
-  for (const item of raw) {
+  const merged = [];
+
+  for (const item of [...byTitle, ...general]) {
     if (!isNonSingleRelease(item)) continue;
     const key = normalizeTitleKey(item.collectionName, item.artistName);
     if (seen.has(key)) continue;
     seen.add(key);
-    clean.push(item);
-    if (clean.length >= limit) break;
+    merged.push(item);
   }
-  return clean;
+
+  merged.sort((a, b) => {
+    const score = (x) => {
+      const t = x.collectionName.toLowerCase();
+      const ar = x.artistName.toLowerCase();
+      const full = `${t} ${ar}`;
+      if (t === needle) return 5;
+      if (t.startsWith(needle)) return 4;
+      if (t.includes(needle)) return 3;
+      if (words.length > 1 && words.every((w) => full.includes(w))) return 2;
+      if (ar.includes(needle)) return 1;
+      return 0;
+    };
+    return score(b) - score(a);
+  });
+
+  return merged.slice(0, limit);
 }
 
 function toAlbumPayloadFromItunes(item, existingNote = null) {
@@ -1652,7 +1681,7 @@ function renderShelf() {
 // ------------------------------------------------------------
 async function populateAlbumDropdown(term, container, onClear) {
   if (term.length < 2) return container.classList.add("hidden");
-  const results = await searchNonSingleAlbums(term, 6);
+  const results = await searchNonSingleAlbums(term, 12);
   container.innerHTML = "";
   if (!results.length) return container.classList.add("hidden");
 
@@ -1740,7 +1769,7 @@ async function runFullSearch(query) {
   );
 
   const [albums, artistsRaw, listeners, myShelf] = await Promise.all([
-    searchNonSingleAlbums(query, 16),
+    searchNonSingleAlbums(query, 20),
     queryItunes(query, "musicArtist", 8),
     searchListeners(query),
     loadUserShelf(sessionUser.id)
@@ -1892,7 +1921,7 @@ const handleOnboardingArtistSearch = debounce(async () => {
   const box = $("artist-search-results");
   if (term.length < 2) return box.classList.add("hidden");
 
-  const results = await queryItunes(term, "musicArtist", 6);
+  const results = await queryItunes(term, "musicArtist", 8);
   box.innerHTML = "";
   const seen = new Set();
   results.forEach((item) => {
@@ -1920,7 +1949,7 @@ const handleOnboardingAlbumSearch = debounce(async () => {
   const box = $("album-search-results");
   if (term.length < 2 || draftTopFive.length >= 5) return box.classList.add("hidden");
 
-  const results = await searchNonSingleAlbums(term, 6);
+  const results = await searchNonSingleAlbums(term, 12);
   box.innerHTML = "";
   results.forEach((item) => {
     const payload = toAlbumPayloadFromItunes(item);
