@@ -5,6 +5,9 @@ const LASTFM_API_KEY = "206b77af8d8f6e6edeafd71d306992ea";
 const ITUNES_COUNTRY = "PT";
 const COVER_CACHE_KEY = "recommentation_station_covers_v1";
 const THEME_KEY = "recommentation_station_theme_v1";
+const SHELF_COLS_KEY = "recommentation_station_shelf_cols_v1";
+const SHELF_SORT_KEY = "recommentation_station_shelf_sort_v1";
+const VALID_SHELF_SORTS = ["recent", "year-desc", "year-asc", "popularity", "title", "artist"];
 const PREVIEW_MAX_SECONDS = 15;
 
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -63,7 +66,14 @@ let stationReqId = 0;
 
 let shelfItems = [];
 let activeShelfTab = "want";
-let activeShelfSort = "recent";
+let activeShelfSort = (() => {
+  try {
+    const saved = localStorage.getItem(SHELF_SORT_KEY);
+    return VALID_SHELF_SORTS.includes(saved) ? saved : "recent";
+  } catch {
+    return "recent";
+  }
+})();
 let lastSearchQuery = "";
 
 let publicShelfItems = [];
@@ -93,6 +103,17 @@ try {
 
 function emptyInteraction() {
   return { saved: false, listened: false, is_tbr: false, positive_note: "" };
+}
+
+function syncShelfCache(savedRow, removedAlbumId = null) {
+  if (removedAlbumId) {
+    shelfItems = shelfItems.filter((s) => s.album_id !== removedAlbumId);
+    return;
+  }
+  if (!savedRow) return;
+  const idx = shelfItems.findIndex((s) => s.album_id === savedRow.album_id);
+  if (idx >= 0) shelfItems[idx] = savedRow;
+  else shelfItems.unshift(savedRow);
 }
 
 // ------------------------------------------------------------
@@ -198,8 +219,6 @@ function hashString(str) {
   return Math.abs(hash);
 }
 
-// Capitalizes names that are completely lowercase (e.g. "capitão fausto" -> "Capitão Fausto")
-// while preserving intentional casing like "D'Angelo", "MF DOOM", or "J Dilla"
 function formatDisplayNameCase(name) {
   if (!name) return "";
   const trimmed = name.trim();
@@ -298,7 +317,6 @@ function isJunkTitle(title) {
   );
 }
 
-// Strict LP runtime/tracklist check so singles and short EPs are NEVER recommended
 function passesFullAlbumCheck(tracks) {
   if (!Array.isArray(tracks) || tracks.length < 5) return false;
   const totalMinutes = tracks.reduce((sum, t) => sum + (t.trackTimeMillis || 0), 0) / 60000;
@@ -374,7 +392,7 @@ function processAvatarFile(file) {
 }
 
 // ------------------------------------------------------------
-// External APIs (Last.fm & iTunes with Zero-Single Filtering)
+// External APIs (Last.fm, iTunes & Apple Music Link Parser)
 // ------------------------------------------------------------
 async function fetchLastFm(method, params = {}) {
   if (!LASTFM_API_KEY) return null;
@@ -431,7 +449,21 @@ const lookupItunes = (id, entity, limit = 60) =>
 
 const toHighResCover = (url) => (url ? url.replace(/100x100bb/i, "800x800bb") : "");
 
+function extractAppleMusicLink(input) {
+  const match = input.match(/apple\.com\/(?:([a-z]{2})\/)?album\/(?:[^/?]+\/)?(?:id)?(\d+)/i);
+  return match ? { country: (match[1] || ITUNES_COUNTRY).toUpperCase(), id: match[2] } : null;
+}
+
 async function searchNonSingleAlbums(term, limit = 12) {
+  const linkInfo = extractAppleMusicLink(term);
+  if (linkInfo) {
+    const res = await fetchItunesRaw(
+      `https://itunes.apple.com/lookup?id=${linkInfo.id}&country=${linkInfo.country}&entity=album`
+    );
+    const col = res.find((r) => r.wrapperType === "collection" && r.collectionName);
+    return col ? [col] : [];
+  }
+
   const [byTitle, general] = await Promise.all([
     queryItunes(term, "album", 30, "albumTerm"),
     queryItunes(term, "album", 50)
@@ -536,7 +568,6 @@ function isExcludedCandidate(title, artist, excluded) {
   );
 }
 
-// Verify an iTunes collection is truly a full-length LP (>= 5 tracks & >= 18 min), then enrich with Last.fm
 async function verifyAndBuildPickFromItunes(itunesAlbum, reason) {
   if (!itunesAlbum?.collectionId || classifyRelease(itunesAlbum) !== "lp") return null;
   if (Number(itunesAlbum.trackCount || 0) < 5) return null;
@@ -583,7 +614,6 @@ async function verifyAndBuildPickFromItunes(itunesAlbum, reason) {
   };
 }
 
-// Fetch studio LPs directly from an artist's iTunes discography (zero singles)
 async function fetchArtistItunesLps(artistName, excluded) {
   const matches = await queryItunes(artistName, "musicArtist", 4);
   const best = matches.find((a) => a.artistName?.toLowerCase() === artistName.toLowerCase()) || matches[0];
@@ -781,12 +811,14 @@ async function upsertAlbumOnShelf(albumData) {
     .single();
 
   if (error) throw error;
+  syncShelfCache(data);
   return data;
 }
 
 async function deleteAlbumFromShelf(albumId) {
   const { error } = await sb.from("user_album_interactions").delete().eq("user_id", sessionUser.id).eq("album_id", albumId);
   if (error) throw error;
+  syncShelfCache(null, albumId);
 }
 
 async function loadUserShelf(userId) {
@@ -836,6 +868,7 @@ function renderNotes(listEl, countEl, curated = [], community = []) {
 function createAlbumCard(item, { mode = "artist", existing = null, onShelfChanged = null } = {}) {
   const isTbr = isItemTbr(item);
   const isFuture = isFutureReleaseDate(item.release_date, item.release_year);
+  const hasCoverActions = mode === "search" || mode === "artist";
   const noteText = item.positive_note ? escapeHtml(item.positive_note) : "";
   const payload = {
     album_id: item.album_id,
@@ -862,6 +895,13 @@ function createAlbumCard(item, { mode = "artist", existing = null, onShelfChange
 
   const noteHtml = (mode === "shelf" || mode === "public") && noteText ? `<p class="shelf-card-note">“${noteText}”</p>` : "";
 
+  const coverOverlayHtml = hasCoverActions
+    ? `<div class="cover-hover-actions">
+         <button class="cover-action-btn js-want" type="button"></button>
+         <button class="cover-action-btn js-listened" type="button"></button>
+       </div>`
+    : "";
+
   let actionsHtml = "";
   if (mode === "shelf") {
     const toggleTbrBtn = !item.listened
@@ -881,25 +921,17 @@ function createAlbumCard(item, { mode = "artist", existing = null, onShelfChange
           <button class="text-btn js-cancel-note" type="button">Cancel</button>
         </div>
       </div>`;
-  } else if (mode === "search") {
-    const onTbr = existing && isItemTbr(existing);
-    const onWant = existing?.saved && !existing?.listened && !onTbr;
-    const onListened = existing?.listened;
-    actionsHtml = `
-      <div class="search-quick-actions">
-        <button class="mini-btn js-want ${onWant || onTbr ? "active" : ""}" type="button">${
-          onTbr ? "On TBR" : onWant ? "On Want" : isFuture ? "+ TBR" : "+ Want"
-        }</button>
-        <button class="mini-btn js-listened ${onListened ? "active" : ""}" type="button">${onListened ? "Listened" : "+ Listened"}</button>
-      </div>`;
   }
 
   const card = document.createElement("article");
   card.className = "shelf-card";
   card.innerHTML = `
-    <button class="shelf-cover js-open-album" type="button" aria-label="Open ${escapeHtml(payload.title)}">
-      ${payload.cover_url ? `<img src="${escapeHtml(payload.cover_url)}" alt="${escapeHtml(payload.title)}" loading="lazy" />` : VINYL_PLACEHOLDER_SVG}
-    </button>
+    <div class="shelf-cover-wrap">
+      <button class="shelf-cover js-open-album" type="button" aria-label="Open ${escapeHtml(payload.title)}">
+        ${payload.cover_url ? `<img src="${escapeHtml(payload.cover_url)}" alt="${escapeHtml(payload.title)}" loading="lazy" />` : VINYL_PLACEHOLDER_SVG}
+      </button>
+      ${coverOverlayHtml}
+    </div>
     <div class="shelf-card-meta">
       <button class="shelf-card-title js-open-album" type="button">${escapeHtml(payload.title)}</button>
       ${subtitleHtml}
@@ -944,22 +976,67 @@ function createAlbumCard(item, { mode = "artist", existing = null, onShelfChange
       await upsertAlbumOnShelf({ ...item, positive_note: ta.value.trim() || null });
       onShelfChanged?.();
     });
-  } else if (mode === "search") {
+  } else if (hasCoverActions) {
+    let cardState = existing ? { ...existing } : null;
     const wantEl = card.querySelector(".js-want");
     const listenedEl = card.querySelector(".js-listened");
-    wantEl.addEventListener("click", async () => {
-      await upsertAlbumOnShelf({ ...payload, saved: true, listened: false, is_tbr: isFuture });
-      wantEl.classList.add("active");
-      wantEl.textContent = isFuture ? "On TBR" : "On Want";
-      listenedEl.classList.remove("active");
-      listenedEl.textContent = "+ Listened";
+
+    const syncButtons = () => {
+      const onTbr = Boolean(cardState && isItemTbr(cardState));
+      const onWant = Boolean(cardState?.saved && !cardState?.listened && !onTbr);
+      const onListened = Boolean(cardState?.listened);
+
+      wantEl.classList.toggle("active", onWant || onTbr);
+      wantEl.textContent = onTbr ? "On TBR" : onWant ? "On Want" : isFuture ? "+ TBR" : "+ Want";
+
+      listenedEl.classList.toggle("active", onListened);
+      listenedEl.textContent = onListened ? "Listened" : "+ Listened";
+    };
+
+    syncButtons();
+
+    wantEl.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const currentlyWantOrTbr = Boolean(cardState && !cardState.listened && (cardState.saved || isItemTbr(cardState)));
+      if (currentlyWantOrTbr) {
+        if (cardState.positive_note) {
+          cardState = await upsertAlbumOnShelf({ ...payload, positive_note: cardState.positive_note, saved: false, listened: false, is_tbr: false });
+        } else {
+          await deleteAlbumFromShelf(payload.album_id);
+          cardState = null;
+        }
+      } else {
+        cardState = await upsertAlbumOnShelf({
+          ...payload,
+          positive_note: cardState?.positive_note || null,
+          saved: true,
+          listened: false,
+          is_tbr: isFuture
+        });
+      }
+      syncButtons();
     });
-    listenedEl.addEventListener("click", async () => {
-      await upsertAlbumOnShelf({ ...payload, saved: false, listened: true, is_tbr: false });
-      listenedEl.classList.add("active");
-      listenedEl.textContent = "Listened";
-      wantEl.classList.remove("active");
-      wantEl.textContent = isFuture ? "+ TBR" : "+ Want";
+
+    listenedEl.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const currentlyListened = Boolean(cardState?.listened);
+      if (currentlyListened) {
+        if (cardState.positive_note) {
+          cardState = await upsertAlbumOnShelf({ ...payload, positive_note: cardState.positive_note, saved: false, listened: false, is_tbr: false });
+        } else {
+          await deleteAlbumFromShelf(payload.album_id);
+          cardState = null;
+        }
+      } else {
+        cardState = await upsertAlbumOnShelf({
+          ...payload,
+          positive_note: cardState?.positive_note || null,
+          saved: false,
+          listened: true,
+          is_tbr: false
+        });
+      }
+      syncButtons();
     });
   }
 
@@ -1082,7 +1159,10 @@ function renderTopFiveEditor() {
   $("top-five-count").textContent = `${draftTopFive.length}/5`;
   const input = $("album-search-input");
   input.disabled = draftTopFive.length >= 5;
-  input.placeholder = draftTopFive.length >= 5 ? "Top 5 full — remove one below to replace" : "Search an album to add to your Top 5...";
+  input.placeholder =
+    draftTopFive.length >= 5
+      ? "Top 5 full — remove one below to replace"
+      : "Search an album or paste an Apple Music link...";
 
   const grid = $("top-five-editor-grid");
   grid.innerHTML = "";
@@ -1255,7 +1335,6 @@ async function showStationView(clearHistory = true) {
 
   let resolvedAlbum = null;
 
-  // If a previously stored pick was a single/EP or unverified, regenerate a true LP automatically
   if (storedPick && !isStoredPickInvalid(storedPick)) {
     resolvedAlbum = mapStoredPickToAlbum(storedPick);
   } else {
@@ -1342,6 +1421,10 @@ function renderDetailButtons() {
   $("detail-tbr-btn").classList.toggle("selected", tbr);
   $("detail-listened-btn").classList.toggle("selected", Boolean(activeDetailInteraction.listened));
   $("detail-note-input").value = activeDetailInteraction.positive_note || "";
+
+  const inTopFive = (userProfile?.top_five_albums || []).some((a) => a.album_id === activeDetailAlbum?.album_id);
+  $("detail-topfive-btn").classList.toggle("selected", inTopFive);
+  $("detail-topfive-btn").textContent = inTopFive ? "In Top 5" : "+ Top 5";
 }
 
 async function saveDetailInteraction(patch) {
@@ -1471,7 +1554,6 @@ async function openAlbumDetail(input, push = true) {
         ? formatShortReleaseDate(colMeta.releaseDate)
         : activeDetailAlbum.release_year;
 
-      // Auto-promote to TBR if user already saved this future release to Want to listen
       if (activeDetailInteraction.saved && !activeDetailInteraction.listened && !activeDetailInteraction.is_tbr && isFutureReleaseDate(colMeta.releaseDate)) {
         saveDetailInteraction({ saved: true, listened: false, is_tbr: true });
       }
@@ -1516,7 +1598,7 @@ async function openAlbumDetail(input, push = true) {
 }
 
 // ------------------------------------------------------------
-// Artist Detail Page (LPs First, EPs Second, Zero Singles)
+// Artist Detail Page (LPs First, EPs Second, Zero Singles + Cover Hover Actions)
 // ------------------------------------------------------------
 function updateFavArtistBtn() {
   if (!activeDetailArtist || !userProfile) return;
@@ -1541,6 +1623,9 @@ async function openArtistDetail(input, push = true) {
   $("artist-eps-section").classList.add("hidden");
   $("detail-artist-empty").classList.add("hidden");
   updateFavArtistBtn();
+
+  // Fetch user's shelf in parallel so hover buttons reflect saved/listened state accurately
+  const shelfPromise = loadUserShelf(sessionUser.id);
 
   let artistId = activeDetailArtist.artistId;
   if (!artistId) {
@@ -1573,6 +1658,9 @@ async function openArtistDetail(input, push = true) {
     if (reqId !== artistReqId) return;
   }
 
+  shelfItems = await shelfPromise;
+  if (reqId !== artistReqId) return;
+
   const seen = new Set();
   const unique = raw
     .filter((a) => {
@@ -1594,7 +1682,9 @@ async function openArtistDetail(input, push = true) {
     const grid = $(gridId);
     grid.innerHTML = "";
     list.forEach((item) => {
-      grid.appendChild(createAlbumCard({ ...toAlbumPayloadFromItunes(item), trackCount: item.trackCount }, { mode: "artist" }));
+      const payload = { ...toAlbumPayloadFromItunes(item), trackCount: item.trackCount };
+      const existing = shelfItems.find((s) => s.album_id === payload.album_id);
+      grid.appendChild(createAlbumCard(payload, { mode: "artist", existing }));
     });
     $(sectionId).classList.remove("hidden");
   };
@@ -1605,7 +1695,7 @@ async function openArtistDetail(input, push = true) {
 }
 
 // ------------------------------------------------------------
-// Shelf View (Want / TBR / Listened + Sort)
+// Shelf View (Want / TBR / Listened + Persistent Sort + Mobile Columns)
 // ------------------------------------------------------------
 async function showShelfView(clearHistory = true) {
   if (!sessionUser) return showAuthView("signin");
@@ -1615,6 +1705,7 @@ async function showShelfView(clearHistory = true) {
   $("shelf-sort-select").value = activeShelfSort;
   shelfItems = await loadUserShelf(sessionUser.id);
   renderShelf();
+  if (activeShelfSort === "popularity") backfillPopularityIfNeeded();
 }
 
 function sortShelfList(list, mode) {
@@ -1677,7 +1768,7 @@ function renderShelf() {
 }
 
 // ------------------------------------------------------------
-// Search Dropdown & Full Search Results (Zero Singles)
+// Search Dropdown & Full Search Results (Zero Singles + Link Support)
 // ------------------------------------------------------------
 async function populateAlbumDropdown(term, container, onClear) {
   if (term.length < 2) return container.classList.add("hidden");
@@ -1725,15 +1816,17 @@ async function populateAlbumDropdown(term, container, onClear) {
     container.appendChild(row);
   });
 
-  const hint = document.createElement("button");
-  hint.type = "button";
-  hint.className = "search-result-item clickable";
-  hint.innerHTML = `<span class="meta-label">See all results for “${escapeHtml(term)}” →</span>`;
-  hint.addEventListener("click", () => {
-    container.classList.add("hidden");
-    showSearchView(term, false);
-  });
-  container.appendChild(hint);
+  if (!extractAppleMusicLink(term)) {
+    const hint = document.createElement("button");
+    hint.type = "button";
+    hint.className = "search-result-item clickable";
+    hint.innerHTML = `<span class="meta-label">See all results for “${escapeHtml(term)}” →</span>`;
+    hint.addEventListener("click", () => {
+      container.classList.add("hidden");
+      showSearchView(term, false);
+    });
+    container.appendChild(hint);
+  }
   container.classList.remove("hidden");
 }
 
@@ -1751,7 +1844,7 @@ async function showSearchView(initialQuery = "", clearHistory = true) {
   if (initialQuery.trim()) {
     await runFullSearch(initialQuery.trim());
   } else {
-    $("search-results-status").textContent = "Search by album title, artist name, or listener.";
+    $("search-results-status").textContent = "Search by album title, artist name, listener, or paste an Apple Music album link.";
     ["search-artists-section", "search-albums-section", "search-listeners-section", "search-empty-state"].forEach((id) =>
       $(id).classList.add("hidden")
     );
@@ -1768,10 +1861,11 @@ async function runFullSearch(query) {
     $(id).classList.add("hidden")
   );
 
+  const isLink = Boolean(extractAppleMusicLink(query));
   const [albums, artistsRaw, listeners, myShelf] = await Promise.all([
     searchNonSingleAlbums(query, 20),
-    queryItunes(query, "musicArtist", 8),
-    searchListeners(query),
+    isLink ? Promise.resolve([]) : queryItunes(query, "musicArtist", 8),
+    isLink ? Promise.resolve([]) : searchListeners(query),
     loadUserShelf(sessionUser.id)
   ]);
   shelfItems = myShelf;
@@ -1784,7 +1878,9 @@ async function runFullSearch(query) {
   });
 
   const total = artists.length + albums.length + listeners.length;
-  $("search-results-status").textContent = `${total} ${total === 1 ? "result" : "results"} for “${query}”`;
+  $("search-results-status").textContent = isLink
+    ? `${total} ${total === 1 ? "album" : "albums"} found from link`
+    : `${total} ${total === 1 ? "result" : "results"} for “${query}”`;
   if (!total) return $("search-empty-state").classList.remove("hidden");
 
   if (artists.length) {
@@ -2047,6 +2143,37 @@ $("detail-tbr-btn").addEventListener("click", () => {
 $("detail-listened-btn").addEventListener("click", () => {
   saveDetailInteraction({ listened: !activeDetailInteraction.listened, saved: false, is_tbr: false });
 });
+$("detail-topfive-btn").addEventListener("click", async () => {
+  if (!activeDetailAlbum || !userProfile) return;
+  const current = Array.isArray(userProfile.top_five_albums) ? [...userProfile.top_five_albums] : [];
+  const idx = current.findIndex((a) => a.album_id === activeDetailAlbum.album_id);
+
+  if (idx >= 0) {
+    current.splice(idx, 1);
+  } else {
+    if (current.length >= 5) {
+      $("detail-topfive-btn").textContent = "Top 5 full (5/5)";
+      setTimeout(renderDetailButtons, 1800);
+      return;
+    }
+    current.push({
+      album_id: activeDetailAlbum.album_id,
+      collectionId: activeDetailAlbum.collectionId || null,
+      artistId: activeDetailAlbum.artistId || null,
+      title: activeDetailAlbum.title,
+      artist: activeDetailAlbum.artist,
+      cover_url: activeDetailAlbum.cover_url || "",
+      release_year: activeDetailAlbum.release_year || ""
+    });
+  }
+
+  await saveProfilePatch({
+    top_five_albums: current,
+    favorite_albums: current.map((a) => `${a.title} — ${a.artist}`)
+  });
+  renderDetailButtons();
+});
+
 $("detail-note-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   $("detail-note-status").textContent = "Saving...";
@@ -2189,10 +2316,27 @@ document.addEventListener("click", (e) => {
   $(`public-tab-${tab}`).addEventListener("click", () => { activePublicShelfTab = tab; renderPublicShelf(); });
 });
 
+$("shelf-sort-select").value = activeShelfSort;
 $("shelf-sort-select").addEventListener("change", () => {
   activeShelfSort = $("shelf-sort-select").value;
+  try { localStorage.setItem(SHELF_SORT_KEY, activeShelfSort); } catch { /* ignore */ }
   renderShelf();
   if (activeShelfSort === "popularity") backfillPopularityIfNeeded();
+});
+
+function applyShelfMobileCols(cols) {
+  const isTwo = cols === "2";
+  const grid = $("shelf-grid");
+  grid.classList.toggle("mobile-cols-2", isTwo);
+  grid.classList.toggle("mobile-cols-1", !isTwo);
+  $("shelf-grid-toggle").textContent = isTwo ? "1 col" : "2 cols";
+  try { localStorage.setItem(SHELF_COLS_KEY, isTwo ? "2" : "1"); } catch { /* ignore */ }
+}
+
+applyShelfMobileCols(localStorage.getItem(SHELF_COLS_KEY) === "2" ? "2" : "1");
+$("shelf-grid-toggle").addEventListener("click", () => {
+  const isTwo = $("shelf-grid").classList.contains("mobile-cols-2");
+  applyShelfMobileCols(isTwo ? "1" : "2");
 });
 
 $("tbr-toggle-form-btn").addEventListener("click", () => {

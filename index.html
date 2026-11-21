@@ -112,7 +112,7 @@
             <input
               id="album-search-input"
               type="text"
-              placeholder="Search an album to add to your Top 5..."
+              placeholder="Search an album or paste an Apple Music link..."
               autocomplete="off"
             />
             <div id="album-search-results" class="search-results hidden"></div>
@@ -222,7 +222,7 @@
           <input
             id="shelf-album-search"
             type="text"
-            placeholder="Search albums (press Enter for full results)..."
+            placeholder="Search albums or paste Apple Music link..."
             autocomplete="off"
           />
           <div id="shelf-search-results" class="search-results hidden"></div>
@@ -247,6 +247,7 @@
           <option value="title">Title (A–Z)</option>
           <option value="artist">Artist (A–Z)</option>
         </select>
+        <button id="shelf-grid-toggle" class="mini-btn mobile-grid-toggle" type="button" aria-label="Toggle grid columns">2 cols</button>
       </div>
     </div>
 
@@ -282,7 +283,7 @@
           <input
             id="global-search-input"
             type="text"
-            placeholder="Search albums, artists, or listeners..."
+            placeholder="Search albums, artists, listeners, or paste Apple Music link..."
             autocomplete="off"
           />
           <div id="global-search-dropdown" class="search-results hidden"></div>
@@ -406,6 +407,7 @@
           <button id="detail-want-btn" class="taste-chip" type="button">Want to listen</button>
           <button id="detail-tbr-btn" class="taste-chip" type="button">TBR</button>
           <button id="detail-listened-btn" class="taste-chip" type="button">Listened</button>
+          <button id="detail-topfive-btn" class="taste-chip" type="button">+ Top 5</button>
         </div>
 
         <div id="detail-preview-wrap" class="preview-wrap hidden">

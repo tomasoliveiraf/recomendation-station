@@ -313,6 +313,10 @@ body {
   border-color: var(--accent);
 }
 
+.mobile-grid-toggle {
+  display: none;
+}
+
 .mode-tab {
   background: none;
   border: none;
@@ -468,7 +472,7 @@ textarea:focus {
   color: var(--accent-ink);
 }
 
-/* Top 5 Favorite Albums Grid (Profile Editor & Public Profile) */
+/* Top 5 Favorite Albums Grid */
 .top-five-grid {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
@@ -1210,8 +1214,15 @@ textarea:focus {
   gap: 0.6rem;
 }
 
+.shelf-cover-wrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+}
+
 .shelf-cover {
   width: 100%;
+  height: 100%;
   aspect-ratio: 1 / 1;
   background-color: var(--bg-surface);
   border: 1px solid var(--border-subtle);
@@ -1225,6 +1236,7 @@ textarea:focus {
   transition: border-color 0.15s ease;
 }
 
+.shelf-cover-wrap:hover .shelf-cover,
 .shelf-cover:hover {
   border-color: var(--accent);
 }
@@ -1234,6 +1246,53 @@ textarea:focus {
   height: 100%;
   object-fit: cover;
   display: block;
+}
+
+/* Cover Hover Quick Actions (Search & Artist Pages) */
+.cover-hover-actions {
+  position: absolute;
+  inset: auto 0 0 0;
+  padding: 1.6rem 0.55rem 0.55rem;
+  background: linear-gradient(to top, rgba(14, 14, 13, 0.92) 0%, rgba(14, 14, 13, 0.55) 60%, transparent 100%);
+  display: flex;
+  gap: 0.35rem;
+  opacity: 0;
+  transition: opacity 0.18s ease;
+  pointer-events: none;
+}
+
+.shelf-cover-wrap:hover .cover-hover-actions,
+.shelf-cover-wrap:focus-within .cover-hover-actions {
+  opacity: 1;
+}
+
+.cover-action-btn {
+  flex: 1;
+  padding: 0.36rem 0.4rem;
+  border: 1px solid rgba(242, 240, 234, 0.32);
+  background: rgba(17, 17, 16, 0.82);
+  color: #f2f0ea;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  pointer-events: auto;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.cover-action-btn:hover {
+  border-color: var(--accent);
+  background: rgba(24, 24, 23, 0.95);
+  color: #ffffff;
+}
+
+.cover-action-btn.active {
+  background-color: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
 }
 
 .shelf-card-meta {
@@ -1421,6 +1480,19 @@ textarea:focus {
   margin-top: 0.85rem;
 }
 
+/* Always reveal compact overlay actions on touch devices without hover */
+@media (hover: none) {
+  .cover-hover-actions {
+    opacity: 1;
+    padding: 1.1rem 0.4rem 0.4rem;
+  }
+
+  .cover-action-btn {
+    font-size: 0.68rem;
+    padding: 0.3rem 0.32rem;
+  }
+}
+
 @media (max-width: 760px) {
   .album-showcase {
     grid-template-columns: 1fr;
@@ -1440,5 +1512,32 @@ textarea:focus {
 
   .tbr-manual-form {
     grid-template-columns: 1fr;
+  }
+
+  .mobile-grid-toggle {
+    display: inline-flex;
+    align-items: center;
+  }
+
+  #shelf-grid.mobile-cols-1 {
+    grid-template-columns: 1fr;
+  }
+
+  #shelf-grid.mobile-cols-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1.15rem 0.85rem;
+  }
+
+  #shelf-grid.mobile-cols-2 .shelf-card-title {
+    font-size: 0.84rem;
+  }
+
+  #shelf-grid.mobile-cols-2 .shelf-card-artist,
+  #shelf-grid.mobile-cols-2 .shelf-card-actions .text-btn {
+    font-size: 0.74rem;
+  }
+
+  #shelf-grid.mobile-cols-2 .shelf-card-actions {
+    gap: 0.45rem;
   }
 }
