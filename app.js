@@ -2167,7 +2167,7 @@ function createAlbumCard(
 ) {
   const isTbr = isItemTbr(item);
   const isFuture = isFutureReleaseDate(item.release_date, item.release_year);
-  const hasQuickActions = mode === "search" || mode === "artist" || mode === "discovery";
+  const hasQuickActions = mode === "search" || mode === "artist" || mode === "discovery" || mode === "public";
   const isShelfMode = mode === "shelf";
   const noteText = item.positive_note ? escapeHtml(item.positive_note) : "";
   const payload = {
@@ -2607,6 +2607,7 @@ function setActiveNav(view, activeTabOverride = null) {
   const navKey = activeTabOverride || view;
 
   $("main-nav")?.classList.toggle("hidden", !ready);
+  document.body.classList.toggle("app-ready", ready);
   $("sign-out-btn")?.classList.toggle("hidden", !sessionUser);
   $("dev-day-controls")?.classList.toggle("hidden", view !== "station" || !ready);
 
@@ -3742,7 +3743,11 @@ async function openListDetail(listId, ownerProfile = null, push = true) {
   $("list-detail-empty").classList.toggle("hidden", albums.length > 0);
 
   albums.forEach((alb, idx) => {
-    const card = createAlbumCard(alb, { mode: "public" });
+    const ownItem = shelfItems.find((saved) =>
+      saved.album_id === alb.album_id ||
+      (saved.collectionId && alb.collectionId && String(saved.collectionId) === String(alb.collectionId))
+    ) || null;
+    const card = createAlbumCard(alb, { mode: "public", existing: ownItem });
     if (isAnnual) {
       const rank = document.createElement("span");
       rank.className = "list-rank-badge";
@@ -4172,7 +4177,14 @@ function renderPublicShelf() {
   const grid = $("public-shelf-grid");
   grid.innerHTML = "";
   $("public-shelf-empty").classList.toggle("hidden", visible.length > 0);
-  visible.forEach((item) => grid.appendChild(createAlbumCard(item, { mode: "public" })));
+  visible.forEach((item) => {
+    // Quick actions on another listener's profile always update the signed-in listener's own shelf.
+    const ownItem = shelfItems.find((saved) =>
+      saved.album_id === item.album_id ||
+      (saved.collectionId && item.collectionId && String(saved.collectionId) === String(item.collectionId))
+    ) || null;
+    grid.appendChild(createAlbumCard(item, { mode: "public", existing: ownItem }));
+  });
 }
 
 // ------------------------------------------------------------
