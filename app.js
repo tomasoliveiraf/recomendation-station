@@ -548,19 +548,82 @@ function lowercaseFirst(str) {
   return str ? str.charAt(0).toLowerCase() + str.slice(1) : "";
 }
 
-function normalizeTitleKey(title, artist) {
-  return `${(artist || "").toLowerCase().trim()}::${(title || "").toLowerCase().trim()}`;
-}
-
-function normalizeAlbumTitleForMatch(title) {
-  return (title || "")
+function normalizeArtistForAlbumMatch(artist) {
+  return String(artist || "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
-    .replace(/\s*[\(\[][^)\]]*(deluxe|remaster|expanded|anniversary|edition|version|bonus|special|live)[^)\]]*[\)\]]/gi, "")
-    .replace(/[^a-z0-9\u00C0-\u024F\s]/g, "")
+    .replace(/\b(feat\.?|featuring|ft\.?)\b.*$/i, "")
+    .replace(/[^a-z0-9\s]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
 
+// Standard and remaster variants share an identity; Deluxe remains distinct.
+function normalizeAlbumTitleForMatch(title) {
+  let value = String(title || "").toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "");
+  value = value
+    .replace(/[\(\[]([^)\]]*)[\)\]]/g, (full, inside) => {
+      // Deluxe editions are intentionally separate identities.
+      if (/\bdeluxe\b/i.test(inside)) return full;
+      if (/\b(remaster(?:ed)?|re-?master(?:ed)?|anniversary|expanded edition|bonus track version|standard edition)\b|\b\d{4}\s+(?:mix|remix)\b/i.test(inside)) return " ";
+      return full;
+    })
+    .replace(/\s*[-–—:]\s*(?:\d{4}\s+)?(?:remaster(?:ed)?|re-?master(?:ed)?|anniversary edition|expanded edition|standard edition|\d{4}\s+(?:mix|remix))\b.*$/i, "")
+    .replace(/\b(?:\d{4}\s+)?(?:remaster(?:ed)?|re-?master(?:ed)?)\b/gi, " ")
+    .replace(/\b\d{4}\s+(?:mix|remix)\b/gi, " ")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return value;
+}
+
+// Collapse equivalent album editions in a view without changing the database.
+// If any edition is Deluxe, its key remains distinct by design.
+function uniqueAlbumsByIdentity(items) {
+  const unique = [];
+  const positions = new Map();
+  for (const item of items || []) {
+    const key = item?.title && item?.artist
+      ? normalizeTitleKey(item.title, item.artist)
+      : `id::${item?.album_id || unique.length}`;
+    if (!positions.has(key)) {
+      positions.set(key, unique.length);
+      unique.push(item);
+      continue;
+    }
+    const index = positions.get(key);
+    const previous = unique[index];
+    // Prefer the row with useful artwork/release metadata, while retaining
+    // interaction state if either duplicate has it.
+    unique[index] = {
+      ...previous,
+      ...((!previous.cover_url && item.cover_url) ? { cover_url: item.cover_url } : {}),
+      ...((!previous.release_date && item.release_date) ? { release_date: item.release_date } : {}),
+      ...((!previous.release_year && item.release_year) ? { release_year: item.release_year } : {}),
+      saved: Boolean(previous.saved || item.saved),
+      listened: Boolean(previous.listened || item.listened),
+      is_tbr: Boolean(previous.is_tbr || item.is_tbr),
+      positive_note: previous.positive_note || item.positive_note || null
+    };
+  }
+  return unique;
+}
+
+function normalizeTitleKey(title, artist) {
+  return `${normalizeArtistForAlbumMatch(artist)}::${normalizeAlbumTitleForMatch(title)}`;
+}
+
+function sameAlbumIdentity(a, b) {
+  if (!a || !b || !a.title || !b.title || !a.artist || !b.artist) return false;
+  return normalizeTitleKey(a.title, a.artist) === normalizeTitleKey(b.title, b.artist);
+}
+
+function findEquivalentShelfItem(album) {
+  if (!album) return null;
+  return shelfItems.find((item) => item.album_id === album.album_id) ||
+    shelfItems.find((item) => sameAlbumIdentity(item, album)) || null;
+}
 function formatDuration(ms) {
   if (!ms || Number.isNaN(ms)) return "";
   const s = Math.floor(ms / 1000);
@@ -1662,7 +1725,7 @@ async function renderHomeDiscoverySections(reqId) {
     }
     if ($(subId)) $(subId).textContent = subText;
     list.forEach((alb) => {
-      const existing = shelfItems.find((s) => s.album_id === alb.album_id);
+      const existing = findEquivalentShelfItem(alb);
       grid.appendChild(
         createAlbumCard(alb, {
           mode: "discovery",
@@ -1931,7 +1994,10 @@ async function saveDailyPick(userId, pickDate, pick) {
 
 async function loadInteraction(userId, albumId) {
   const { data } = await sb.from("user_album_interactions").select("*").eq("user_id", userId).eq("album_id", albumId).maybeSingle();
-  return data || emptyInteraction();
+  if (data) return data;
+  const candidate = shelfItems.find((item) => item.album_id === albumId);
+  if (!candidate) return emptyInteraction();
+  return shelfItems.find((item) => item.album_id !== albumId && sameAlbumIdentity(item, candidate)) || emptyInteraction();
 }
 
 async function loadCommunityNotes(albumId) {
@@ -1950,45 +2016,66 @@ async function loadCommunityNotes(albumId) {
 }
 
 async function upsertAlbumOnShelf(albumData) {
-  const isFuture = isFutureReleaseDate(albumData.release_date, albumData.release_year);
+  if (!sessionUser) throw new Error("You must be signed in to update your Shelf.");
+
+  const { data: currentRows, error: readError } = await sb
+    .from("user_album_interactions").select("*").eq("user_id", sessionUser.id);
+  if (readError) throw readError;
+
+  const rows = currentRows || [];
+  const exact = rows.find((row) => row.album_id === albumData.album_id);
+  const relatedRows = rows.filter((row) => sameAlbumIdentity(row, albumData));
+  const equivalent = exact || relatedRows[0] || null;
+  const targetId = equivalent?.album_id || albumData.album_id;
+  const bestMetadataRow = relatedRows.find((row) => row.release_date || row.release_year || row.cover_url) || equivalent;
+  const releaseDate = albumData.release_date || bestMetadataRow?.release_date || null;
+  const releaseYear = albumData.release_year || bestMetadataRow?.release_year || (releaseDate ? releaseDate.slice(0, 4) : "");
+  const isFuture = isFutureReleaseDate(releaseDate, releaseYear);
   const autoTbr = !albumData.listened && (Boolean(albumData.is_tbr) || (Boolean(albumData.saved) && isFuture));
-  let pop = Number(albumData.popularity || 0);
-  if (!pop && albumData.artist && albumData.title && !autoTbr) {
-    pop = await fetchAlbumPopularity(albumData.artist, albumData.title);
+  let pop = Number(albumData.popularity || equivalent?.popularity || 0);
+  if (!pop && albumData.artist && albumData.title && !autoTbr) pop = await fetchAlbumPopularity(albumData.artist, albumData.title);
+
+  const payload = {
+    user_id: sessionUser.id,
+    album_id: targetId,
+    title: equivalent?.title || albumData.title || null,
+    artist: albumData.artist || equivalent?.artist || null,
+    cover_url: albumData.cover_url || bestMetadataRow?.cover_url || equivalent?.cover_url || null,
+    release_year: releaseYear ? String(releaseYear) : null,
+    release_date: releaseDate,
+    is_tbr: autoTbr,
+    popularity: pop,
+    saved: Boolean(albumData.saved) || autoTbr,
+    listened: Boolean(albumData.listened),
+    positive_note: albumData.positive_note ?? relatedRows.find((row) => row.positive_note?.trim())?.positive_note ?? equivalent?.positive_note ?? null,
+    updated_at: new Date().toISOString()
+  };
+
+  const { data, error } = await sb.from("user_album_interactions")
+    .upsert(payload, { onConflict: "user_id,album_id" }).select().single();
+  if (error) throw error;
+
+  const duplicates = relatedRows.filter((row) => row.album_id !== targetId);
+  if (duplicates.length) {
+    const ids = duplicates.map((row) => row.album_id);
+    const { error: deleteError } = await sb.from("user_album_interactions").delete()
+      .eq("user_id", sessionUser.id).in("album_id", ids);
+    if (deleteError) console.warn("Could not consolidate older duplicate Shelf entries:", deleteError);
+    shelfItems = shelfItems.filter((row) => !ids.includes(row.album_id));
   }
 
-  const { data, error } = await sb
-    .from("user_album_interactions")
-    .upsert(
-      {
-        user_id: sessionUser.id,
-        album_id: albumData.album_id,
-        title: albumData.title || null,
-        artist: albumData.artist || null,
-        cover_url: albumData.cover_url || null,
-        release_year: albumData.release_year ? String(albumData.release_year) : null,
-        release_date: albumData.release_date || null,
-        is_tbr: autoTbr,
-        popularity: pop,
-        saved: Boolean(albumData.saved) || autoTbr,
-        listened: Boolean(albumData.listened),
-        positive_note: albumData.positive_note ?? null,
-        updated_at: new Date().toISOString()
-      },
-      { onConflict: "user_id,album_id" }
-    )
-    .select()
-    .single();
-
-  if (error) throw error;
   syncShelfCache(data);
   return data;
 }
 
 async function deleteAlbumFromShelf(albumId) {
-  const { error } = await sb.from("user_album_interactions").delete().eq("user_id", sessionUser.id).eq("album_id", albumId);
+  const selected = shelfItems.find((item) => item.album_id === albumId);
+  const equivalent = selected ? findEquivalentShelfItem(selected) : null;
+  const ids = [...new Set([albumId, equivalent?.album_id].filter(Boolean))];
+  const { error } = await sb.from("user_album_interactions").delete()
+    .eq("user_id", sessionUser.id).in("album_id", ids);
   if (error) throw error;
-  syncShelfCache(null, albumId);
+  ids.forEach((id) => syncShelfCache(null, id));
 }
 
 async function loadUserShelf(userId) {
@@ -2506,7 +2593,7 @@ function renderGenreAlbumsGrid() {
   $("genre-detail-empty").classList.toggle("hidden", sorted.length > 0);
 
   sorted.forEach((alb) => {
-    const existing = shelfItems.find((s) => s.album_id === alb.album_id);
+    const existing = findEquivalentShelfItem(alb);
     grid.appendChild(createAlbumCard(alb, { mode: "discovery", existing }));
   });
 }
@@ -3285,7 +3372,7 @@ async function loadSimilarAlbumsForDetail(album, reqId) {
 
   if (!picks.length || reqId !== detailReqId) return;
   picks.forEach((alb) => {
-    const existing = shelfItems.find((s) => s.album_id === alb.album_id);
+    const existing = findEquivalentShelfItem(alb);
     grid.appendChild(createAlbumCard(alb, { mode: "discovery", existing }));
   });
   sec.classList.remove("hidden");
@@ -3382,12 +3469,15 @@ function updateFavArtistBtn() {
 function renderArtistReleases() {
   const fillGrid = (sectionId, countId, gridId, list, singular, plural) => {
     const sec = $(sectionId);
-    if (!list.length) return sec.classList.add("hidden");
-    $(countId).textContent = `${list.length} ${list.length === 1 ? singular : plural}`;
+    // Artist discographies come directly from provider search results, so dedupe
+    // them here as well (not only in the user's Shelf).
+    const canonicalList = uniqueAlbumsByIdentity(list);
+    if (!canonicalList.length) return sec.classList.add("hidden");
+    $(countId).textContent = `${canonicalList.length} ${canonicalList.length === 1 ? singular : plural}`;
     const grid = $(gridId);
     grid.innerHTML = "";
-    sortAlbumsList(list, activeArtistSort).forEach((payload) => {
-      const existing = shelfItems.find((s) => s.album_id === payload.album_id);
+    sortAlbumsList(canonicalList, activeArtistSort).forEach((payload) => {
+      const existing = findEquivalentShelfItem(payload);
       grid.appendChild(createAlbumCard(payload, { mode: "artist", existing }));
     });
     sec.classList.remove("hidden");
@@ -3656,10 +3746,11 @@ function renderListsPanel() {
 }
 
 function renderShelf() {
+  const canonicalShelf = uniqueAlbumsByIdentity(shelfItems);
   const buckets = {
-    tbr: shelfItems.filter((i) => isItemTbr(i)),
-    want: shelfItems.filter((i) => i.saved && !i.listened && !isItemTbr(i)),
-    listened: shelfItems.filter((i) => i.listened)
+    tbr: canonicalShelf.filter((i) => isItemTbr(i)),
+    want: canonicalShelf.filter((i) => i.saved && !i.listened && !isItemTbr(i)),
+    listened: canonicalShelf.filter((i) => i.listened)
   };
 
   $("count-want").textContent = buckets.want.length;
@@ -3798,7 +3889,7 @@ async function populateAlbumDropdown(term, container, onClear) {
 
   results.forEach((item) => {
     const isFuture = isFutureReleaseDate(item.release_date, item.release_year);
-    const existing = shelfItems.find((s) => s.album_id === item.album_id);
+    const existing = findEquivalentShelfItem(item);
     const payload = { ...item, positive_note: existing?.positive_note || null };
     const thumb = item.thumb_url || item.cover_url || "";
 
@@ -3876,7 +3967,7 @@ function renderSearchAlbumsGrid() {
   const grid = $("search-albums-grid");
   grid.innerHTML = "";
   sortAlbumsList(lastSearchAlbums, activeSearchSort).forEach((payload) => {
-    const existing = shelfItems.find((s) => s.album_id === payload.album_id);
+    const existing = findEquivalentShelfItem(payload);
     grid.appendChild(createAlbumCard(payload, { mode: "search", existing }));
   });
 }
@@ -4146,10 +4237,11 @@ async function openPublicProfile(profile, push = true, asOwnTab = false) {
 }
 
 function renderPublicShelf() {
+  const canonicalPublicShelf = uniqueAlbumsByIdentity(publicShelfItems);
   const buckets = {
-    listened: publicShelfItems.filter((i) => i.listened),
-    tbr: publicShelfItems.filter((i) => isItemTbr(i)),
-    want: publicShelfItems.filter((i) => i.saved && !i.listened && !isItemTbr(i))
+    listened: canonicalPublicShelf.filter((i) => i.listened),
+    tbr: canonicalPublicShelf.filter((i) => isItemTbr(i)),
+    want: canonicalPublicShelf.filter((i) => i.saved && !i.listened && !isItemTbr(i))
   };
 
   $("public-count-listened").textContent = buckets.listened.length;
@@ -4181,6 +4273,7 @@ function renderPublicShelf() {
     // Quick actions on another listener's profile always update the signed-in listener's own shelf.
     const ownItem = shelfItems.find((saved) =>
       saved.album_id === item.album_id ||
+      sameAlbumIdentity(saved, item) ||
       (saved.collectionId && item.collectionId && String(saved.collectionId) === String(item.collectionId))
     ) || null;
     grid.appendChild(createAlbumCard(item, { mode: "public", existing: ownItem }));
