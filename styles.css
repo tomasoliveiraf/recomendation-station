@@ -1273,6 +1273,7 @@ textarea:focus {
   position: relative;
   width: 100%;
   aspect-ratio: 1 / 1;
+  overflow: hidden;
 }
 
 .shelf-cover {
@@ -1303,13 +1304,14 @@ textarea:focus {
   display: block;
 }
 
-/* Cover Hover Quick Actions (Search, Artist & Home Discovery) */
+/* Cover Hover Quick Actions (Icon-only, contained inside cover) */
 .cover-hover-actions {
   position: absolute;
   inset: auto 0 0 0;
-  padding: 1.6rem 0.5rem 0.5rem;
-  background: linear-gradient(to top, rgba(14, 14, 13, 0.92) 0%, rgba(14, 14, 13, 0.55) 60%, transparent 100%);
+  padding: 1.4rem 0.45rem 0.45rem;
+  background: linear-gradient(to top, rgba(14, 14, 13, 0.88) 0%, rgba(14, 14, 13, 0.4) 60%, transparent 100%);
   display: flex;
+  justify-content: flex-end;
   gap: 0.35rem;
   opacity: 0;
   transition: opacity 0.18s ease;
@@ -1322,15 +1324,15 @@ textarea:focus {
 }
 
 .cover-action-btn {
-  flex: 1;
-  padding: 0.34rem 0.35rem;
+  width: 30px;
+  height: 30px;
+  padding: 0;
   border: 1px solid rgba(242, 240, 234, 0.32);
-  background: rgba(17, 17, 16, 0.82);
+  background: rgba(17, 17, 16, 0.84);
   color: #f2f0ea;
-  font: inherit;
-  font-size: 0.7rem;
-  font-weight: 500;
-  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
   pointer-events: auto;
   backdrop-filter: blur(6px);
@@ -1338,9 +1340,15 @@ textarea:focus {
   transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
 
+.cover-action-btn svg {
+  width: 15px;
+  height: 15px;
+  display: block;
+}
+
 .cover-action-btn:hover {
   border-color: var(--accent);
-  background: rgba(24, 24, 23, 0.95);
+  background: rgba(24, 24, 23, 0.96);
   color: #ffffff;
 }
 
@@ -1826,8 +1834,13 @@ textarea:focus {
   }
 
   .cover-action-btn {
-    font-size: 0.66rem;
-    padding: 0.26rem 0.25rem;
+    width: 28px;
+    height: 28px;
+  }
+
+  .cover-action-btn svg {
+    width: 14px;
+    height: 14px;
   }
 }
 

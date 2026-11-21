@@ -57,6 +57,10 @@ const ANNUAL_ICON_SVG = `
   </svg>
 `;
 
+const ICON_BOOKMARK_SVG = `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 2.25h9a.75.75 0 0 1 .75.75v10.75l-5.25-3-5.25 3V3a.75.75 0 0 1 .75-.75Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" /></svg>`;
+const ICON_CLOCK_SVG = `<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.4" /><path d="M8 4.75V8l2.25 1.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" /></svg>`;
+const ICON_CHECK_SVG = `<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.4" /><path d="m5.3 8.1 1.85 1.85 3.65-3.9" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" /></svg>`;
+
 // ------------------------------------------------------------
 // App State
 // ------------------------------------------------------------
@@ -739,16 +743,19 @@ async function fetchGlobalPopularAlbums(limit = 10) {
       if (!title || !artist || isJunkTitle(title) || isEpTitle(title)) continue;
       const key = normalizeTitleKey(title, artist);
       if (seen.has(key)) continue;
+
+      const verified = await verifyLastFmFullAlbum(artist, title);
+      if (!verified) continue;
       seen.add(key);
 
-      const cover = extractLastFmCover(item.image);
+      const cover = extractLastFmCover(verified.image) || extractLastFmCover(item.image);
       const slug = `${artist}-${title}`.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
       albums.push({
         album_id: `lfm-${slug}`,
         collectionId: null,
         artistId: null,
-        title,
-        artist,
+        title: verified.name || title,
+        artist: verified.artist || artist,
         cover_url: cover,
         release_year: yearTag,
         release_date: null,
@@ -1419,11 +1426,23 @@ function createAlbumCard(item, { mode = "artist", existing = null, listenerCount
       const onWant = Boolean(cardState?.saved && !cardState?.listened && !onTbr);
       const onListened = Boolean(cardState?.listened);
 
+      const wantTitle = onTbr
+        ? "On TBR (click to remove)"
+        : onWant
+        ? "On Want to listen (click to remove)"
+        : isFuture
+        ? "Add to TBR"
+        : "Want to listen";
       wantEl.classList.toggle("active", onWant || onTbr);
-      wantEl.textContent = onTbr ? "On TBR" : onWant ? "On Want" : isFuture ? "+ TBR" : "+ Want";
+      wantEl.innerHTML = isFuture || onTbr ? ICON_CLOCK_SVG : ICON_BOOKMARK_SVG;
+      wantEl.title = wantTitle;
+      wantEl.setAttribute("aria-label", wantTitle);
 
+      const listenedTitle = onListened ? "Listened (click to remove)" : "Mark as listened";
       listenedEl.classList.toggle("active", onListened);
-      listenedEl.textContent = onListened ? "Listened" : "+ Listened";
+      listenedEl.innerHTML = ICON_CHECK_SVG;
+      listenedEl.title = listenedTitle;
+      listenedEl.setAttribute("aria-label", listenedTitle);
     };
 
     syncButtons();
@@ -2090,6 +2109,31 @@ async function openAlbumDetail(input, push = true) {
   updatePreviewUI();
 }
 
+async function verifyLastFmFullAlbum(artist, title) {
+  if (!artist || !title || isJunkTitle(title) || isEpTitle(title)) return null;
+
+  const info = await fetchLastFm("album.getInfo", { artist, album: title, autocorrect: 1 });
+  const alb = info?.album;
+  if (!alb) return null;
+
+  const tags = (alb.tags?.tag || []).map((t) => (t.name || "").toLowerCase().trim());
+  if (tags.slice(0, 3).some((t) => t === "single" || t === "ep")) return null;
+
+  const rawTracks = alb.tracks?.track;
+  const tracks = Array.isArray(rawTracks) ? rawTracks : rawTracks ? [rawTracks] : [];
+  if (tracks.length < 5) return null;
+
+  const withDur = tracks.filter((t) => Number(t.duration || 0) > 0);
+  if (withDur.length >= Math.ceil(tracks.length * 0.7)) {
+    const totalMin = withDur.reduce((sum, t) => sum + Number(t.duration), 0) / 60;
+    if (totalMin < 18 && !(tracks.length >= 7 && totalMin >= 15)) return null;
+  } else if (tracks.length < 6) {
+    return null;
+  }
+
+  return alb;
+}
+
 async function loadSimilarAlbumsForDetail(album, reqId) {
   const sec = $("album-similar-section");
   const grid = $("album-similar-grid");
@@ -2099,45 +2143,64 @@ async function loadSimilarAlbumsForDetail(album, reqId) {
   const seen = new Set([normalizeTitleKey(album.title, album.artist)]);
   const picks = [];
 
-  const simData = await fetchLastFm("artist.getSimilar", { artist: album.artist, limit: 12, autocorrect: 1 });
+  const simData = await fetchLastFm("artist.getSimilar", { artist: album.artist, limit: 14, autocorrect: 1 });
   if (reqId !== detailReqId) return;
 
-  const simArtists = (simData?.similarartists?.artist || []).map((a) => a.name).filter(Boolean).slice(0, 6);
+  const simArtists = (simData?.similarartists?.artist || []).map((a) => a.name).filter(Boolean).slice(0, 8);
 
   if (simArtists.length) {
     const responses = await Promise.all(
-      simArtists.map((name) => fetchLastFm("artist.getTopAlbums", { artist: name, limit: 6, autocorrect: 1 }))
+      simArtists.map((name) => fetchLastFm("artist.getTopAlbums", { artist: name, limit: 10, autocorrect: 1 }))
     );
     if (reqId !== detailReqId) return;
 
-    responses.forEach((data, idx) => {
-      if (picks.length >= 4) return;
+    for (let idx = 0; idx < responses.length && picks.length < 4; idx++) {
       const artistName = simArtists[idx];
-      const candidates = (data?.topalbums?.album || []).filter(
+      const candidates = (responses[idx]?.topalbums?.album || []).filter(
         (a) => a.name && !isJunkTitle(a.name) && !isEpTitle(a.name) && !seen.has(normalizeTitleKey(a.name, artistName))
       );
-      const chosen = candidates.find((a) => extractLastFmCover(a.image)) || candidates[0];
-      if (!chosen) return;
-      const payload = toAlbumPayloadFromLastFm({
-        name: chosen.name,
-        artist: chosen.artist?.name || artistName,
-        image: chosen.image
-      });
-      seen.add(normalizeTitleKey(payload.title, payload.artist));
-      picks.push(payload);
-    });
+
+      for (const cand of candidates.slice(0, 4)) {
+        const candArtist = cand.artist?.name || artistName;
+        const verified = await verifyLastFmFullAlbum(candArtist, cand.name);
+        if (reqId !== detailReqId) return;
+        if (!verified) continue;
+
+        const cover = extractLastFmCover(verified.image) || extractLastFmCover(cand.image);
+        const payload = toAlbumPayloadFromLastFm({
+          name: verified.name || cand.name,
+          artist: verified.artist || candArtist,
+          image: cover ? [{ size: "extralarge", "#text": cover }] : []
+        });
+        seen.add(normalizeTitleKey(payload.title, payload.artist));
+        picks.push(payload);
+        break;
+      }
+    }
   }
 
-  if (!picks.length && album.genre) {
-    const tagData = await fetchLastFm("tag.getTopAlbums", { tag: album.genre.toLowerCase(), limit: 12 });
+  if (picks.length < 4 && album.genre) {
+    const tagData = await fetchLastFm("tag.getTopAlbums", { tag: album.genre.toLowerCase(), limit: 20 });
     if (reqId !== detailReqId) return;
     for (const item of tagData?.albums?.album || []) {
       if (picks.length >= 4) break;
       if (!item?.name || !item?.artist?.name || isJunkTitle(item.name) || isEpTitle(item.name)) continue;
       const key = normalizeTitleKey(item.name, item.artist.name);
       if (seen.has(key)) continue;
+
+      const verified = await verifyLastFmFullAlbum(item.artist.name, item.name);
+      if (reqId !== detailReqId) return;
+      if (!verified) continue;
+
       seen.add(key);
-      picks.push(toAlbumPayloadFromLastFm({ name: item.name, artist: item.artist.name, image: item.image }));
+      const cover = extractLastFmCover(verified.image) || extractLastFmCover(item.image);
+      picks.push(
+        toAlbumPayloadFromLastFm({
+          name: verified.name || item.name,
+          artist: verified.artist || item.artist.name,
+          image: cover ? [{ size: "extralarge", "#text": cover }] : []
+        })
+      );
     }
   }
 
