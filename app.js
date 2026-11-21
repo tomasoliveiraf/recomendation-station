@@ -1,11 +1,46 @@
 const SUPABASE_URL = "https://kenilapjkhfgyyyqfcog.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_vCjojbNSbAWFeXXacnxYJA_M0PxLvKI";
+const LASTFM_API_KEY = "206b77af8d8f6e6edeafd71d306992ea";
 
 const COVER_CACHE_KEY = "recommentation_station_covers_v1";
 const THEME_KEY = "recommentation_station_theme_v1";
 const PREVIEW_MAX_SECONDS = 15;
 
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+const hasLastFmKey = Boolean(
+  LASTFM_API_KEY &&
+  !LASTFM_API_KEY.startsWith("YOUR_") &&
+  LASTFM_API_KEY.trim().length > 10
+);
+
+// Maps your 24 onboarding tastes to clean Last.fm community tags
+const TASTE_TO_LASTFM_TAGS = {
+  "Ambient & Experimental": ["ambient", "experimental"],
+  "Jazz & Spiritual": ["jazz", "spiritual jazz"],
+  "Post-Punk & Art Rock": ["post-punk", "art rock"],
+  "Electronic & IDM": ["idm", "electronic"],
+  "Folk & Acoustic": ["folk", "acoustic"],
+  "Soul & Neo-Soul": ["neo-soul", "soul"],
+  "Hip-Hop & Instrumental": ["hip-hop", "instrumental hip-hop"],
+  "Shoegaze & Dream Pop": ["shoegaze", "dream pop"],
+  "Indie & Alternative": ["indie rock", "alternative"],
+  "Modern Classical": ["modern classical", "neoclassical"],
+  "Post-Rock & Math Rock": ["post-rock", "math rock"],
+  "Psychedelic & Krautrock": ["psychedelic rock", "krautrock"],
+  "Synthpop & New Wave": ["synthpop", "new wave"],
+  "R&B & Funk": ["funk", "rnb"],
+  "Trip-Hop & Downtempo": ["trip-hop", "downtempo"],
+  "House & Techno": ["house", "techno"],
+  "Metal & Doom": ["doom metal", "post-metal"],
+  "Punk & Hardcore": ["punk", "post-hardcore"],
+  "Blues & Roots": ["blues", "americana"],
+  "Bossa Nova & MPB": ["bossa nova", "mpb"],
+  "Afrobeat & Highlife": ["afrobeat", "highlife"],
+  "Dub & Reggae": ["dub", "reggae"],
+  "Soundtracks & Scores": ["soundtrack", "film score"],
+  "Singer-Songwriter": ["singer-songwriter", "indie folk"]
+};
 
 // App State
 let sessionUser = null;
@@ -19,6 +54,7 @@ let dayOffset = 0;
 let currentAlbum = null;
 let currentAlbumCoverUrl = "";
 let currentInteraction = { saved: false, listened: false, positive_note: "" };
+let stationRequestId = 0;
 
 let shelfItems = [];
 let activeShelfTab = "want";
@@ -40,7 +76,7 @@ let artistRequestId = 0;
 
 // Shared Audio Preview Controller
 const previewAudio = new Audio();
-let activePreviewTrack = null; // { trackId, trackName, previewUrl }
+let activePreviewTrack = null;
 
 // Profile Form Draft State
 let draftArtists = [];
@@ -249,7 +285,6 @@ function updatePreviewUI() {
     ? `Playing · ${displayTrack.trackName}`
     : `Preview · ${displayTrack.trackName}`;
 
-  // Sync active highlight inside the compact tracklist
   detailTracklist.querySelectorAll(".track-row").forEach((row) => {
     const isRowPlaying =
       isPlaying && String(row.dataset.trackId) === String(activePreviewTrack.trackId);
@@ -306,7 +341,6 @@ previewAudio.addEventListener("timeupdate", () => {
     return;
   }
 
-  // Gentle fade-out during the last 1.5 seconds
   if (t >= PREVIEW_MAX_SECONDS - 1.5) {
     const remaining = Math.max(0, PREVIEW_MAX_SECONDS - t);
     previewAudio.volume = Math.min(1, remaining / 1.5);
@@ -340,6 +374,39 @@ function formatDuration(ms) {
   return `${mins}:${String(secs).padStart(2, "0")}`;
 }
 
+function cleanCopyrightToLabel(copyright) {
+  if (!copyright) return "—";
+  let cleaned = copyright
+    .replace(/^[℗©\s\d\-–,]+/g, "")
+    .replace(/\b(under exclusive license to|all rights reserved).*/i, "")
+    .trim();
+  if (cleaned.length > 26) {
+    cleaned = cleaned.slice(0, 25).trim() + "…";
+  }
+  return cleaned || "—";
+}
+
+function cleanLastFmWiki(rawSummary) {
+  if (!rawSummary) return "";
+  const withoutReadMore = rawSummary.replace(/<a\s+href="https?:\/\/www\.last\.fm[^>]*>.*?<\/a>.*/is, "");
+  const temp = document.createElement("div");
+  temp.innerHTML = withoutReadMore;
+  const text = (temp.textContent || temp.innerText || "").replace(/\s+/g, " ").trim();
+  if (text.length < 35) return "";
+  return text.length > 360 ? `${text.slice(0, 355).trim()}…` : text;
+}
+
+function pickAestheticForTags(tags = []) {
+  const joined = tags.join(" ").toLowerCase();
+  if (/(electronic|idm|techno|house|post-punk|industrial|math|experimental|synth|dub)/.test(joined)) {
+    return "modular";
+  }
+  if (/(jazz|folk|acoustic|dream pop|shoegaze|classical|bossa|mpb|ambient|singer-songwriter)/.test(joined)) {
+    return "italic";
+  }
+  return "editorial";
+}
+
 function classifyRelease(item) {
   const name = (item.collectionName || "").trim();
   const count = Number(item.trackCount || 0);
@@ -357,6 +424,17 @@ function classifyRelease(item) {
     return "ep";
   }
   return "lp";
+}
+
+function isLikelyCompilationOrJunk(title) {
+  if (!title) return true;
+  const t = title.toLowerCase().trim();
+  return (
+    t === "(null)" ||
+    t === "undefined" ||
+    /\b(greatest hits|best of|the essentials|anthology|collection|karaoke|tribute to)\b/i.test(t) ||
+    /\s*[-–]\s*single$/i.test(t)
+  );
 }
 
 function renderAvatar(el, avatarUrl, name) {
@@ -393,6 +471,45 @@ function processAvatarFile(file) {
     };
     reader.readAsDataURL(file);
   });
+}
+
+// ------------------------------------------------------------
+// Last.fm API Client
+// ------------------------------------------------------------
+async function fetchLastFm(method, params = {}) {
+  if (!hasLastFmKey) return null;
+  const qs = new URLSearchParams({
+    method,
+    api_key: LASTFM_API_KEY.trim(),
+    format: "json",
+    ...params
+  });
+
+  try {
+    const res = await fetch(`https://ws.audioscrobbler.com/2.0/?${qs.toString()}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data.error) {
+      console.warn("Last.fm API warning:", data.message);
+      return null;
+    }
+    return data;
+  } catch (err) {
+    console.warn("Last.fm fetch error:", err);
+    return null;
+  }
+}
+
+function extractLastFmCover(images = []) {
+  if (!Array.isArray(images)) return "";
+  const preferred =
+    images.find((i) => i.size === "mega") ||
+    images.find((i) => i.size === "extralarge") ||
+    images.find((i) => i.size === "large");
+  const url = preferred?.["#text"] || "";
+  // Ignore Last.fm blank star placeholder
+  if (!url || url.includes("2a96cbd8b46e442fc41c2b86b821562f")) return "";
+  return url;
 }
 
 // ------------------------------------------------------------
@@ -460,6 +577,7 @@ function toHighResCover(artworkUrl100) {
 }
 
 async function resolveAlbumCover(album) {
+  if (album.coverUrl) return album.coverUrl;
   if (coverCache[album.id]) return coverCache[album.id];
 
   const query = album.coverQuery || `${album.artist} ${album.title}`;
@@ -482,7 +600,7 @@ async function resolveAlbumCover(album) {
 }
 
 // ------------------------------------------------------------
-// Date & Daily Recommendation Engine
+// Date & Dynamic Daily Recommendation Engine (Last.fm + iTunes + Supabase)
 // ------------------------------------------------------------
 function getActiveDate() {
   const date = new Date();
@@ -491,7 +609,10 @@ function getActiveDate() {
 }
 
 function getDateSeed(date) {
-  return `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
 }
 
 function formatDisplayDate(date) {
@@ -511,20 +632,23 @@ function hashString(str) {
   return Math.abs(hash);
 }
 
-function normalizeItemForDisplay(rawItem) {
+function normalizeTitleKey(title, artist) {
+  return `${(artist || "").toLowerCase().trim()}::${(title || "").toLowerCase().trim()}`;
+}
+
+function normalizeCatalogItem(rawItem) {
   const positiveReviews = (rawItem.reviews || [])
     .filter((rev) => rev.sentiment === "positive" && rev.text)
     .map(({ author, source, text }) => ({ author, source, text }));
   return { ...rawItem, reviews: positiveReviews };
 }
 
-function getDailyRecommendation(profile, date) {
+function getFallbackCatalogRecommendation(profile, date, excludedTitleKeys) {
   const allAlbums = CATALOG_ITEMS.filter((item) => item.mediaType === "album");
   const tastes = profile?.tastes || [];
-  const favAlbumsLower = (profile?.favorite_albums || []).map((a) => a.toLowerCase());
 
   const freshAlbums = allAlbums.filter(
-    (album) => !favAlbumsLower.some((fav) => fav.includes(album.title.toLowerCase()))
+    (album) => !excludedTitleKeys.has(normalizeTitleKey(album.title, album.artist))
   );
   const candidatePool = freshAlbums.length > 0 ? freshAlbums : allAlbums;
 
@@ -535,7 +659,217 @@ function getDailyRecommendation(profile, date) {
 
   const seed = `${profile.user_id}|${getDateSeed(date)}`;
   const index = hashString(seed) % pool.length;
-  return normalizeItemForDisplay(pool[index]);
+  const picked = normalizeCatalogItem(pool[index]);
+  return {
+    ...picked,
+    reason: `Curated for ${profile.display_name}`
+  };
+}
+
+function buildExcludedSets(profile, pastPicks, userShelf) {
+  const excludedKeys = new Set();
+  const excludedTitles = new Set();
+
+  (profile?.favorite_albums || []).forEach((fav) => {
+    const clean = fav.toLowerCase();
+    excludedTitles.add(clean.split("—")[0].trim());
+  });
+
+  (userShelf || []).forEach((item) => {
+    if (item.listened && item.title) {
+      excludedKeys.add(normalizeTitleKey(item.title, item.artist));
+      excludedTitles.add(item.title.toLowerCase().trim());
+    }
+  });
+
+  (pastPicks || []).forEach((pick) => {
+    excludedKeys.add(normalizeTitleKey(pick.title, pick.artist));
+    excludedTitles.add((pick.title || "").toLowerCase().trim());
+  });
+
+  return { excludedKeys, excludedTitles };
+}
+
+function isExcludedCandidate(title, artist, excluded) {
+  if (isLikelyCompilationOrJunk(title)) return true;
+  const titleLower = (title || "").toLowerCase().trim();
+  if (excluded.excludedTitles.has(titleLower)) return true;
+  if (excluded.excludedKeys.has(normalizeTitleKey(title, artist))) return true;
+  return false;
+}
+
+async function generateDynamicDailyPick(profile, dateSeed, excluded) {
+  if (!hasLastFmKey) return null;
+
+  const favArtists = profile?.favorite_artists || [];
+  const tastes = profile?.tastes || [];
+  const dayHash = hashString(`${profile.user_id}|${dateSeed}`);
+
+  // Alternate between artist-similarity (~60% when user has favorite artists) and taste tags
+  const tryArtistFirst = favArtists.length > 0 && dayHash % 5 !== 0;
+
+  let chosen = null; // { title, artist, reason, coverFallback }
+
+  async function tryByFavoriteArtist() {
+    if (!favArtists.length) return null;
+    const seedArtist = favArtists[dayHash % favArtists.length];
+    const simData = await fetchLastFm("artist.getSimilar", {
+      artist: seedArtist,
+      limit: 20,
+      autocorrect: 1
+    });
+
+    const similarArtists = (simData?.similarartists?.artist || []).filter(
+      (a) => a.name && !favArtists.some((f) => f.toLowerCase() === a.name.toLowerCase())
+    );
+
+    if (!similarArtists.length) return null;
+
+    // Try up to 3 similar artists rotated deterministically by dayHash
+    for (let attempt = 0; attempt < Math.min(3, similarArtists.length); attempt++) {
+      const candidateArtist = similarArtists[(dayHash + attempt * 3) % similarArtists.length].name;
+      const topAlbData = await fetchLastFm("artist.getTopAlbums", {
+        artist: candidateArtist,
+        limit: 12,
+        autocorrect: 1
+      });
+
+      const albums = (topAlbData?.topalbums?.album || []).filter(
+        (alb) => alb.name && !isExcludedCandidate(alb.name, candidateArtist, excluded)
+      );
+
+      if (albums.length > 0) {
+        const pickedAlb = albums[(dayHash + attempt) % Math.min(albums.length, 6)];
+        return {
+          title: pickedAlb.name,
+          artist: pickedAlb.artist?.name || candidateArtist,
+          reason: `Because you listen to ${seedArtist}`,
+          coverFallback: extractLastFmCover(pickedAlb.image)
+        };
+      }
+    }
+    return null;
+  }
+
+  async function tryByTasteTag() {
+    const selectedTaste = tastes.length
+      ? tastes[dayHash % tastes.length]
+      : "Ambient & Experimental";
+    const mappedTags = TASTE_TO_LASTFM_TAGS[selectedTaste] || [selectedTaste.toLowerCase()];
+    const chosenTag = mappedTags[dayHash % mappedTags.length];
+    const page = (dayHash % 3) + 1;
+
+    const tagData = await fetchLastFm("tag.getTopAlbums", {
+      tag: chosenTag,
+      limit: 30,
+      page
+    });
+
+    const albums = (tagData?.albums?.album || []).filter((alb) => {
+      const artistName = alb.artist?.name || "";
+      return alb.name && artistName && !isExcludedCandidate(alb.name, artistName, excluded);
+    });
+
+    if (!albums.length) return null;
+
+    const pickedAlb = albums[dayHash % albums.length];
+    return {
+      title: pickedAlb.name,
+      artist: pickedAlb.artist.name,
+      reason: `From your ${selectedTaste} tastes`,
+      coverFallback: extractLastFmCover(pickedAlb.image)
+    };
+  }
+
+  if (tryArtistFirst) {
+    chosen = (await tryByFavoriteArtist()) || (await tryByTasteTag());
+  } else {
+    chosen = (await tryByTasteTag()) || (await tryByFavoriteArtist());
+  }
+
+  if (!chosen) return null;
+
+  // Enrich in parallel: Last.fm album.getInfo (summary + tags) & iTunes Search (official cover + IDs + year)
+  const [infoData, itunesResults] = await Promise.all([
+    fetchLastFm("album.getInfo", {
+      artist: chosen.artist,
+      album: chosen.title,
+      autocorrect: 1
+    }),
+    queryItunes(`${chosen.artist} ${chosen.title}`, "album", 5)
+  ]);
+
+  const lfmInfo = infoData?.album || {};
+  const lfmTags = (lfmInfo.tags?.tag || [])
+    .map((t) => t.name)
+    .filter((name) => name && name.length < 28 && !/^\d{4}$/.test(name))
+    .slice(0, 4);
+
+  const synopsis = cleanLastFmWiki(lfmInfo.wiki?.summary || lfmInfo.wiki?.content || "");
+
+  // Match best iTunes LP result
+  const lpMatches = itunesResults.filter((r) => classifyRelease(r) !== "single");
+  const titleNeedle = chosen.title.toLowerCase().slice(0, 10);
+  const itunesMatch =
+    lpMatches.find((r) => r.collectionName?.toLowerCase().includes(titleNeedle)) ||
+    lpMatches[0] ||
+    itunesResults[0] ||
+    null;
+
+  let runtime = "—";
+  let releaseYear = "—";
+  let label = "—";
+  let genre = lfmTags[0] || "Album";
+  let coverUrl = chosen.coverFallback || extractLastFmCover(lfmInfo.image) || "";
+  let collectionId = null;
+  let artistId = null;
+
+  if (itunesMatch) {
+    collectionId = itunesMatch.collectionId ? String(itunesMatch.collectionId) : null;
+    artistId = itunesMatch.artistId ? String(itunesMatch.artistId) : null;
+    coverUrl = toHighResCover(itunesMatch.artworkUrl100) || coverUrl;
+    releaseYear = itunesMatch.releaseDate ? itunesMatch.releaseDate.slice(0, 4) : "—";
+    label = cleanCopyrightToLabel(itunesMatch.copyright);
+    if (itunesMatch.primaryGenreName) genre = itunesMatch.primaryGenreName;
+
+    // Fetch exact track runtime once so it's stored permanently in daily_picks
+    if (collectionId) {
+      const tracksRes = await lookupItunes(collectionId, "song", 100);
+      const tracks = tracksRes.filter((r) => r.wrapperType === "track");
+      const totalMs = tracks.reduce((sum, t) => sum + (t.trackTimeMillis || 0), 0);
+      if (totalMs > 0) {
+        runtime = `${Math.round(totalMs / 60000)} min`;
+      } else if (itunesMatch.trackCount) {
+        runtime = `${itunesMatch.trackCount} tracks`;
+      }
+    }
+  }
+
+  const finalTags = lfmTags.length > 0 ? lfmTags : [genre];
+  const slug = `${chosen.artist}-${chosen.title}`
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+  const albumId = collectionId ? `itunes-${collectionId}` : `lfm-${slug}`;
+
+  return {
+    album_id: albumId,
+    title: itunesMatch?.collectionName || lfmInfo.name || chosen.title,
+    artist: itunesMatch?.artistName || lfmInfo.artist || chosen.artist,
+    cover_url: coverUrl,
+    release_year: releaseYear,
+    runtime,
+    label,
+    genre,
+    tags: finalTags,
+    synopsis:
+      synopsis ||
+      `Selected for your station ${chosen.reason.toLowerCase()}. Open full details to preview tracks and leave your impression.`,
+    aesthetic: pickAestheticForTags(finalTags),
+    reason: chosen.reason,
+    itunes_collection_id: collectionId,
+    itunes_artist_id: artistId
+  };
 }
 
 // ------------------------------------------------------------
@@ -570,6 +904,73 @@ async function upsertUserProfile(payload) {
 
   if (error) throw error;
   return data;
+}
+
+async function loadDailyPick(userId, pickDate) {
+  try {
+    const { data, error } = await sb
+      .from("daily_picks")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("pick_date", pickDate)
+      .maybeSingle();
+    if (error) return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+async function loadPastDailyPicks(userId) {
+  try {
+    const { data, error } = await sb
+      .from("daily_picks")
+      .select("title, artist, pick_date")
+      .eq("user_id", userId)
+      .order("pick_date", { ascending: false })
+      .limit(90);
+    if (error) return [];
+    return data || [];
+  } catch {
+    return [];
+  }
+}
+
+async function saveDailyPick(userId, pickDate, pick) {
+  try {
+    const { data, error } = await sb
+      .from("daily_picks")
+      .upsert(
+        {
+          user_id: userId,
+          pick_date: pickDate,
+          album_id: pick.album_id,
+          title: pick.title,
+          artist: pick.artist,
+          cover_url: pick.cover_url || "",
+          release_year: pick.release_year || "",
+          runtime: pick.runtime || "",
+          label: pick.label || "",
+          genre: pick.genre || "",
+          tags: pick.tags || [],
+          synopsis: pick.synopsis || "",
+          aesthetic: pick.aesthetic || "editorial",
+          reason: pick.reason || "",
+          itunes_collection_id: pick.itunes_collection_id || null,
+          itunes_artist_id: pick.itunes_artist_id || null
+        },
+        { onConflict: "user_id,pick_date" }
+      )
+      .select()
+      .single();
+    if (error) {
+      console.warn("Could not store daily pick:", error.message);
+      return pick;
+    }
+    return data;
+  } catch {
+    return pick;
+  }
 }
 
 async function loadInteraction(userId, albumId) {
@@ -899,12 +1300,35 @@ function showAuthView(mode = "signin") {
 }
 
 // ------------------------------------------------------------
-// Station View (Daily Recommendation)
+// Station View (Dynamic Daily Recommendation)
 // ------------------------------------------------------------
 function renderStationInteractionButtons() {
   wantBtn.classList.toggle("selected", Boolean(currentInteraction.saved));
   listenedBtn.classList.toggle("selected", Boolean(currentInteraction.listened));
   personalNoteInput.value = currentInteraction.positive_note || "";
+}
+
+function renderStationReviews(curatedNotes = [], communityNotes = []) {
+  const combined = [...(curatedNotes || []), ...(communityNotes || [])];
+  const reviewsList = document.getElementById("reviews-list");
+  reviewsList.innerHTML = "";
+  document.getElementById("review-source-note").textContent =
+    `${combined.length} listener ${combined.length === 1 ? "note" : "notes"}`;
+
+  if (combined.length === 0) {
+    reviewsList.innerHTML = `<p class="meta-label">No listener notes on this album yet. Be the first to share what stood out.</p>`;
+    return;
+  }
+
+  combined.forEach((rev) => {
+    const card = document.createElement("blockquote");
+    card.className = "review-card";
+    card.innerHTML = `
+      <p class="review-quote">“${escapeHtml(rev.text)}”</p>
+      <footer class="review-author">— ${escapeHtml(rev.author)} (${escapeHtml(rev.source)})</footer>
+    `;
+    reviewsList.appendChild(card);
+  });
 }
 
 async function saveStationInteraction(patch) {
@@ -918,7 +1342,7 @@ async function saveStationInteraction(patch) {
       album_id: currentAlbum.id,
       title: currentAlbum.title,
       artist: currentAlbum.artist,
-      cover_url: currentAlbumCoverUrl || coverCache[currentAlbum.id] || "",
+      cover_url: currentAlbumCoverUrl || currentAlbum.coverUrl || coverCache[currentAlbum.id] || "",
       release_year: currentAlbum.year,
       saved: currentInteraction.saved,
       listened: currentInteraction.listened,
@@ -940,66 +1364,148 @@ async function showStationView(clearHistory = true) {
     return;
   }
 
+  const reqId = ++stationRequestId;
   if (clearHistory) viewHistory = [];
   currentRouteState = { type: "station" };
   setActiveNav("station");
 
   const activeDate = getActiveDate();
-  currentAlbum = getDailyRecommendation(userProfile, activeDate);
-  currentInteraction = await loadInteraction(sessionUser.id, currentAlbum.id);
-
+  const dateSeed = getDateSeed(activeDate);
   currentDateLabel.textContent = formatDisplayDate(activeDate);
-  document.getElementById("listener-greeting").textContent =
-    `Curated for ${userProfile.display_name}`;
-  stationView.dataset.aesthetic = currentAlbum.aesthetic || "editorial";
 
+  // Subtle loading state while checking Supabase or tuning a fresh dynamic pick
   const coverEl = document.getElementById("album-cover");
   coverEl.classList.add("loading");
+  stationArtistBtn.textContent = "";
+  stationTitleEl.textContent = "Tuning transmission…";
+  document.getElementById("album-synopsis").textContent = "";
+  document.getElementById("album-tags").innerHTML = "";
+  document.getElementById("reviews-list").innerHTML = "";
+  document.getElementById("listener-greeting").textContent = `Curating for ${userProfile.display_name}`;
+
+  // 1. Check if today's pick is already stored in Supabase daily_picks
+  let storedPick = await loadDailyPick(sessionUser.id, dateSeed);
+  if (reqId !== stationRequestId) return;
+
+  let resolvedAlbum = null;
+
+  if (storedPick) {
+    resolvedAlbum = {
+      id: storedPick.album_id,
+      mediaType: "album",
+      title: storedPick.title,
+      artist: storedPick.artist,
+      year: storedPick.release_year || "—",
+      runtime: storedPick.runtime || "—",
+      label: storedPick.label || "—",
+      genre: storedPick.genre || "",
+      tags: storedPick.tags || [],
+      synopsis: storedPick.synopsis || "",
+      aesthetic: storedPick.aesthetic || "editorial",
+      reason: storedPick.reason || `Curated for ${userProfile.display_name}`,
+      coverUrl: storedPick.cover_url || "",
+      collectionId: storedPick.itunes_collection_id || null,
+      artistId: storedPick.itunes_artist_id || null,
+      reviews: []
+    };
+  } else {
+    // 2. Build exclusion list from listened shelf + past daily picks + favorite albums
+    const [pastPicks, myShelf] = await Promise.all([
+      loadPastDailyPicks(sessionUser.id),
+      loadUserShelf(sessionUser.id)
+    ]);
+    if (reqId !== stationRequestId) return;
+
+    const excluded = buildExcludedSets(userProfile, pastPicks, myShelf);
+
+    // 3. Try dynamic recommendation via Last.fm + iTunes
+    const dynamicPick = await generateDynamicDailyPick(userProfile, dateSeed, excluded);
+    if (reqId !== stationRequestId) return;
+
+    if (dynamicPick) {
+      const savedPick = await saveDailyPick(sessionUser.id, dateSeed, dynamicPick);
+      if (reqId !== stationRequestId) return;
+
+      resolvedAlbum = {
+        id: savedPick.album_id,
+        mediaType: "album",
+        title: savedPick.title,
+        artist: savedPick.artist,
+        year: savedPick.release_year || "—",
+        runtime: savedPick.runtime || "—",
+        label: savedPick.label || "—",
+        genre: savedPick.genre || "",
+        tags: savedPick.tags || [],
+        synopsis: savedPick.synopsis || "",
+        aesthetic: savedPick.aesthetic || "editorial",
+        reason: savedPick.reason || `Curated for ${userProfile.display_name}`,
+        coverUrl: savedPick.cover_url || "",
+        collectionId: savedPick.itunes_collection_id || null,
+        artistId: savedPick.itunes_artist_id || null,
+        reviews: []
+      };
+    } else {
+      // 4. Graceful fallback to local catalog if Last.fm key is not configured or unreachable
+      resolvedAlbum = getFallbackCatalogRecommendation(
+        userProfile,
+        activeDate,
+        excluded.excludedKeys
+      );
+    }
+  }
+
+  currentAlbum = resolvedAlbum;
+
+  // Load user's shelf interaction & real community notes for this album
+  const [interaction, communityNotes] = await Promise.all([
+    loadInteraction(sessionUser.id, currentAlbum.id),
+    loadCommunityNotes(currentAlbum.id)
+  ]);
+  if (reqId !== stationRequestId) return;
+
+  currentInteraction = interaction;
+
+  document.getElementById("listener-greeting").textContent = currentAlbum.reason;
+  stationView.dataset.aesthetic = currentAlbum.aesthetic || "editorial";
+
   coverEl.alt = `${currentAlbum.title} by ${currentAlbum.artist}`;
   const albumIdForRender = currentAlbum.id;
-  currentAlbumCoverUrl = coverCache[currentAlbum.id] || "";
+  currentAlbumCoverUrl = currentAlbum.coverUrl || coverCache[currentAlbum.id] || "";
 
-  resolveAlbumCover(currentAlbum).then((url) => {
-    if (currentAlbum?.id === albumIdForRender && url) {
-      currentAlbumCoverUrl = url;
-      coverEl.src = url;
-      coverEl.onload = () => coverEl.classList.remove("loading");
-    } else {
-      coverEl.classList.remove("loading");
-    }
-  });
+  if (currentAlbumCoverUrl) {
+    coverEl.src = currentAlbumCoverUrl;
+    coverEl.onload = () => coverEl.classList.remove("loading");
+    if (coverEl.complete) coverEl.classList.remove("loading");
+  } else {
+    resolveAlbumCover(currentAlbum).then((url) => {
+      if (currentAlbum?.id === albumIdForRender && url) {
+        currentAlbumCoverUrl = url;
+        coverEl.src = url;
+        coverEl.onload = () => coverEl.classList.remove("loading");
+      } else {
+        coverEl.classList.remove("loading");
+      }
+    });
+  }
 
-  document.getElementById("media-type-badge").textContent = currentAlbum.mediaType;
-  document.getElementById("album-year").textContent = currentAlbum.year;
-  document.getElementById("album-runtime").textContent = currentAlbum.runtime;
-  document.getElementById("album-label").textContent = currentAlbum.label;
+  document.getElementById("media-type-badge").textContent = currentAlbum.mediaType || "Album";
+  document.getElementById("album-year").textContent = currentAlbum.year || "—";
+  document.getElementById("album-runtime").textContent = currentAlbum.runtime || "—";
+  document.getElementById("album-label").textContent = currentAlbum.label || "—";
   stationArtistBtn.textContent = currentAlbum.artist;
   stationTitleEl.textContent = currentAlbum.title;
-  document.getElementById("album-synopsis").textContent = currentAlbum.synopsis;
+  document.getElementById("album-synopsis").textContent = currentAlbum.synopsis || "";
 
   const tagsContainer = document.getElementById("album-tags");
   tagsContainer.innerHTML = "";
-  currentAlbum.tags.forEach((tag) => {
+  (currentAlbum.tags || []).forEach((tag) => {
     const span = document.createElement("span");
     span.className = "tag-pill";
     span.textContent = tag;
     tagsContainer.appendChild(span);
   });
 
-  const reviewsList = document.getElementById("reviews-list");
-  reviewsList.innerHTML = "";
-  document.getElementById("review-source-note").textContent =
-    `${currentAlbum.reviews.length} listener ${currentAlbum.reviews.length === 1 ? "note" : "notes"}`;
-
-  currentAlbum.reviews.forEach((rev) => {
-    const card = document.createElement("blockquote");
-    card.className = "review-card";
-    card.innerHTML = `
-      <p class="review-quote">“${escapeHtml(rev.text)}”</p>
-      <footer class="review-author">— ${escapeHtml(rev.author)} (${escapeHtml(rev.source)})</footer>
-    `;
-    reviewsList.appendChild(card);
-  });
+  renderStationReviews(currentAlbum.reviews, communityNotes);
 
   noteStatus.textContent = "";
   renderStationInteractionButtons();
@@ -1009,11 +1515,14 @@ function openCurrentStationAlbumDetail() {
   if (!currentAlbum) return;
   openAlbumDetail({
     album_id: currentAlbum.id,
+    collectionId: currentAlbum.collectionId || null,
+    artistId: currentAlbum.artistId || null,
     title: currentAlbum.title,
     artist: currentAlbum.artist,
-    cover_url: currentAlbumCoverUrl || coverCache[currentAlbum.id] || "",
+    cover_url: currentAlbumCoverUrl || currentAlbum.coverUrl || coverCache[currentAlbum.id] || "",
     release_year: String(currentAlbum.year || ""),
     runtime: currentAlbum.runtime,
+    genre: currentAlbum.genre || currentAlbum.tags?.[0] || "",
     label: currentAlbum.label,
     synopsis: currentAlbum.synopsis,
     reviews: currentAlbum.reviews,
@@ -1114,7 +1623,23 @@ async function openAlbumDetail(albumInput, pushHistory = true) {
   renderDetailInteractionState();
   renderDetailNotes(activeDetailAlbum.reviews, communityNotes);
 
-  // Resolve iTunes collectionId if not already known
+  // If no synopsis yet and Last.fm key is available, fetch album summary quietly
+  if (!activeDetailAlbum.synopsis && hasLastFmKey) {
+    fetchLastFm("album.getInfo", {
+      artist: activeDetailAlbum.artist,
+      album: activeDetailAlbum.title,
+      autocorrect: 1
+    }).then((info) => {
+      if (reqId !== detailRequestId) return;
+      const summary = cleanLastFmWiki(info?.album?.wiki?.summary || "");
+      if (summary) {
+        activeDetailAlbum.synopsis = summary;
+        detailAlbumSynopsis.textContent = summary;
+        detailAlbumSynopsis.classList.remove("hidden");
+      }
+    });
+  }
+
   let colId = activeDetailAlbum.collectionId;
   if (!colId) {
     const query = activeDetailAlbum.coverQuery || `${activeDetailAlbum.artist} ${activeDetailAlbum.title}`;
@@ -1148,14 +1673,14 @@ async function openAlbumDetail(albumInput, pushHistory = true) {
         activeDetailAlbum.cover_url = toHighResCover(colMeta.artworkUrl100);
         detailAlbumCover.src = activeDetailAlbum.cover_url;
       }
-      if (colMeta.releaseDate && !activeDetailAlbum.release_year) {
+      if (colMeta.releaseDate && (!activeDetailAlbum.release_year || activeDetailAlbum.release_year === "—")) {
         activeDetailAlbum.release_year = colMeta.releaseDate.slice(0, 4);
         detailAlbumYear.textContent = activeDetailAlbum.release_year;
       }
       if (colMeta.primaryGenreName) {
         detailAlbumGenre.textContent = colMeta.primaryGenreName;
       }
-      if (colMeta.copyright && !activeDetailAlbum.label) {
+      if (colMeta.copyright && (!activeDetailAlbum.label || activeDetailAlbum.label === "—")) {
         detailAlbumLabel.textContent = colMeta.copyright;
       }
     }
@@ -1167,7 +1692,6 @@ async function openAlbumDetail(albumInput, pushHistory = true) {
       }
       detailTracklistCount.textContent = `${tracks.length} ${tracks.length === 1 ? "track" : "tracks"}`;
 
-      // Pick a representative track for the mini play button (prefer first track >= 60s to avoid short intros)
       const playableTracks = tracks.filter((t) => Boolean(t.previewUrl));
       const picked =
         playableTracks.find((t) => (t.trackTimeMillis || 0) >= 60000) || playableTracks[0] || null;
@@ -1311,7 +1835,6 @@ async function openArtistDetail(artistInput, pushHistory = true) {
   artistEpsGrid.innerHTML = "";
   updateFavoriteArtistButton();
 
-  // Resolve artistId if missing
   let artistId = activeDetailArtist.artistId;
   if (!artistId) {
     let artistMatches = await queryItunes(activeDetailArtist.name, "musicArtist", 5);
@@ -1351,7 +1874,6 @@ async function openArtistDetail(artistInput, pushHistory = true) {
     if (reqId !== artistRequestId) return;
   }
 
-  // Deduplicate by lowercase title & sort newest first
   const seenTitles = new Set();
   const uniqueReleases = rawReleases
     .filter((a) => {
@@ -1362,7 +1884,6 @@ async function openArtistDetail(artistInput, pushHistory = true) {
     })
     .sort((a, b) => (b.releaseDate || "").localeCompare(a.releaseDate || ""));
 
-  // Split into LPs and EPs, completely removing Singles
   const lps = [];
   const eps = [];
   uniqueReleases.forEach((rel) => {
@@ -1502,7 +2023,6 @@ function renderShelf() {
   });
 }
 
-// Reusable album dropdown renderer
 async function populateAlbumDropdown(term, container, onSelectClear) {
   if (term.length < 2) {
     container.classList.add("hidden");
@@ -2026,15 +2546,18 @@ signOutBtn.addEventListener("click", async () => {
   showAuthView("signin");
 });
 
-// Station click targets for Album & Artist pages
 stationCoverBtn.addEventListener("click", openCurrentStationAlbumDetail);
 stationTitleEl.addEventListener("click", openCurrentStationAlbumDetail);
 stationOpenDetailsBtn.addEventListener("click", openCurrentStationAlbumDetail);
 stationArtistBtn.addEventListener("click", () => {
-  if (currentAlbum) openArtistDetail({ name: currentAlbum.artist });
+  if (currentAlbum) {
+    openArtistDetail({
+      artistId: currentAlbum.artistId || null,
+      name: currentAlbum.artist
+    });
+  }
 });
 
-// Detail Page Back, Preview & Actions
 albumDetailBack.addEventListener("click", goBack);
 artistDetailBack.addEventListener("click", goBack);
 
@@ -2106,7 +2629,6 @@ detailArtistFavBtn.addEventListener("click", async () => {
   updateFavoriteArtistButton();
 });
 
-// Profile Avatar & Form Handlers
 nameInput.addEventListener("input", () => {
   if (!draftAvatarUrl) updateAvatarPreview();
 });
@@ -2132,7 +2654,6 @@ removeAvatarBtn.addEventListener("click", () => {
 artistSearchInput.addEventListener("input", handleOnboardingArtistSearch);
 albumSearchInput.addEventListener("input", handleOnboardingAlbumSearch);
 
-// Shelf Search (Dropdown + Enter opens Search Results page)
 shelfAlbumSearch.addEventListener(
   "input",
   debounce(() => {
@@ -2152,7 +2673,6 @@ shelfAlbumSearch.addEventListener("keydown", (e) => {
   }
 });
 
-// Global Search Page (Dropdown + Enter/Submit runs full results)
 globalSearchInput.addEventListener(
   "input",
   debounce(() => {
@@ -2296,6 +2816,8 @@ personalNoteForm.addEventListener("submit", async (e) => {
     listened: hasShelfStatus ? currentInteraction.listened : true
   });
   noteStatus.textContent = "Saved";
+  const communityNotes = await loadCommunityNotes(currentAlbum.id);
+  renderStationReviews(currentAlbum.reviews, communityNotes);
 });
 
 // Shelf Tabs
