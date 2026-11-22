@@ -116,7 +116,7 @@ let activeArtistSort = "popularity";
 let activePublicProfile = null;
 let publicProfileReqId = 0;
 let publicShelfItems = [];
-let activePublicShelfTab = "listened";
+let activePublicShelfTab = "listened"; let activePublicShelfSort = "recent";
 let viewingOwnProfile = false;
 let activeListenersTab = "all";
 let listenersDirectoryReqId = 0;
@@ -2597,6 +2597,40 @@ function normalizeGenreForLastFm(genreName) {
   return lower.split("/")[0].trim();
 }
 
+const CANONICAL_GENRE_RULES = [
+  [/\b(dream pop|shoegaze|noise pop|jangle pop|twee pop)\b/i, "Dream Pop / Shoegaze"],
+  [/\b(indie rock|alternative rock|alt rock|college rock|garage rock|post[- ]rock|math rock|britpop)\b/i, "Alternative Rock"],
+  [/\b(indie pop|alternative pop|bedroom pop|chamber pop|art pop|synth pop|synthpop)\b/i, "Indie Pop"],
+  [/\b(post[- ]punk|new wave|darkwave|coldwave)\b/i, "Post-Punk / New Wave"],
+  [/\b(punk rock|hardcore punk|pop punk|emo|emocore)\b/i, "Punk / Emo"],
+  [/\b(heavy metal|black metal|death metal|doom metal|thrash metal|metalcore|nu metal|alternative metal)\b/i, "Metal"],
+  [/\b(electronic|electronica|idm|glitch|downtempo|trip hop|breakbeat)\b/i, "Electronic"],
+  [/\b(house|deep house|tech house|progressive house|disco house)\b/i, "House"],
+  [/\b(techno|minimal techno|detroit techno|acid techno)\b/i, "Techno"],
+  [/\b(ambient|dark ambient|drone|new age)\b/i, "Ambient"],
+  [/\b(hip hop|hip-hop|rap|trap|boom bap|cloud rap)\b/i, "Hip-Hop"],
+  [/\b(r&b|soul|neo soul|contemporary r&b)\b/i, "R&B / Soul"],
+  [/\b(jazz|bebop|free jazz|jazz fusion|smooth jazz)\b/i, "Jazz"],
+  [/\b(folk|indie folk|freak folk|singer[- ]songwriter|americana)\b/i, "Folk"],
+  [/\b(country|bluegrass|alt-country)\b/i, "Country"],
+  [/\b(classical|baroque|romantic music|orchestral|opera)\b/i, "Classical"],
+  [/\b(reggae|dub|ska|dancehall)\b/i, "Reggae / Dub"],
+  [/\b(bossa nova|mpb|samba|tropicalia|forró)\b/i, "Brazilian"],
+  [/\b(pop rock|power pop|soft rock|classic rock|rock)\b/i, "Rock"],
+  [/\b(pop|dance pop|electropop)\b/i, "Pop"]
+];
+
+function canonicalizeGenre(raw) {
+  const value = String(raw || "").trim().toLowerCase();
+  if (!value) return "";
+  for (const [pattern, label] of CANONICAL_GENRE_RULES) {
+    if (pattern.test(value)) return label;
+  }
+  const cleaned = value.replace(/\b(music|genre|style)\b/g, "").replace(/\s+/g, " ").trim();
+  if (!cleaned || cleaned.length > 20 || cleaned.split(/\s+/).length > 3) return "";
+  return formatDisplayNameCase(cleaned);
+}
+
 function extractCleanGenreTags(rawTags = [], primaryGenre = "", artistName = "") {
   const artistLower = (artistName || "").toLowerCase().trim();
   const seen = new Set();
@@ -2606,20 +2640,22 @@ function extractCleanGenreTags(rawTags = [], primaryGenre = "", artistName = "")
     if (!raw) return;
     const trimmed = String(raw).trim();
     const lower = trimmed.toLowerCase();
-    if (!trimmed || trimmed.length < 2 || trimmed.length > 26) return;
-    if (/^\d{4}s?$/.test(lower)) return;
-    if (IGNORED_GENRE_TAGS.has(lower)) return;
+    if (!trimmed || trimmed.length < 2 || trimmed.length > 40) return;
+    if (/^\d{4}s?$/.test(lower) || IGNORED_GENRE_TAGS.has(lower)) return;
     if (artistLower && lower === artistLower) return;
-    if (seen.has(lower)) return;
-    seen.add(lower);
-    out.push(formatDisplayNameCase(trimmed));
+    const canonical = canonicalizeGenre(trimmed);
+    if (!canonical) return;
+    const key = canonical.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(canonical);
   };
 
   if (primaryGenre && primaryGenre !== "—" && primaryGenre.toLowerCase() !== "music") {
-    primaryGenre.split("/").forEach((part) => pushTag(part));
+    primaryGenre.split(/[;,/]/).forEach(pushTag);
   }
   toArray(rawTags).forEach(pushTag);
-  return out.slice(0, 5);
+  return out.slice(0, 3);
 }
 
 function renderClickableGenrePills(container, genres = []) {
@@ -4482,6 +4518,7 @@ function renderPublicShelf() {
   $("public-lists-grid")?.classList.toggle("hidden", !isLists);
 
   if (isLists) {
+    document.querySelector(".public-shelf-toolbar")?.classList.add("hidden");
     const grid = $("public-lists-grid");
     grid.innerHTML = "";
     $("public-shelf-empty").classList.toggle("hidden", publicLists.length > 0);
@@ -4489,7 +4526,11 @@ function renderPublicShelf() {
     return;
   }
 
-  const visible = buckets[activePublicShelfTab];
+  const visible = sortShelfList(buckets[activePublicShelfTab] || [], activePublicShelfSort);
+  const sortControl = $("public-shelf-sort-select");
+  if (sortControl) sortControl.value = activePublicShelfSort;
+  const sortWrap = document.querySelector(".public-shelf-toolbar");
+  if (sortWrap) sortWrap.classList.remove("hidden");
   const grid = $("public-shelf-grid");
   grid.innerHTML = "";
   $("public-shelf-empty").classList.toggle("hidden", visible.length > 0);
@@ -4840,6 +4881,10 @@ document.addEventListener("click", (e) => {
 });
 
 if ($("shelf-sort-select")) $("shelf-sort-select").value = activeShelfSort;
+on("public-shelf-sort-select", "change", () => {
+  activePublicShelfSort = $("public-shelf-sort-select").value;
+  renderPublicShelf();
+});
 on("shelf-sort-select", "change", () => {
   activeShelfSort = $("shelf-sort-select").value;
   try { localStorage.setItem(SHELF_SORT_KEY, activeShelfSort); } catch { /* ignore */ }

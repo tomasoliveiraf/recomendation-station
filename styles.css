@@ -2369,7 +2369,7 @@ textarea:focus {
     min-height: 58px;
   }
 
-  .site-header .main-nav:not(.hidden) {
+  .site-header .site-header .main-nav:not(.hidden) {
     position: fixed;
     z-index: 1000;
     left: 0;
@@ -3281,5 +3281,110 @@ body.follow-dialog-open {
 
   .public-profile-actions .profile-action-btn {
     font-size: 0.72rem;
+  }
+}
+
+
+/* Public profile shelf sorting */
+.public-shelf-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.55rem;
+  margin: -0.8rem 0 1.25rem;
+}
+
+/* Mobile installed-app layout: respect the status bar and move navigation
+   into a fixed bottom bar, clear of the home indicator. */
+@media (max-width: 760px) {
+  .site-header {
+    padding-top: calc(0.9rem + env(safe-area-inset-top, 0px));
+    padding-left: max(1rem, env(safe-area-inset-left, 0px));
+    padding-right: max(1rem, env(safe-area-inset-right, 0px));
+    padding-bottom: 0.85rem;
+    gap: 0.65rem;
+    align-items: center;
+  }
+
+  .site-header .brand {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  .brand-name-btn {
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    text-align: left;
+  }
+
+  .header-controls {
+    gap: 0.65rem;
+    flex: 0 0 auto;
+  }
+
+  .header-date {
+    display: none;
+  }
+
+  .site-header .main-nav:not(.hidden) {
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    max-width: none;
+    min-height: 60px;
+    padding: 0.45rem max(0.35rem, env(safe-area-inset-left, 0px)) calc(0.45rem + env(safe-area-inset-bottom, 0px));
+    margin: 0;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    align-items: center;
+    justify-content: stretch;
+    gap: 0.1rem;
+    flex-wrap: nowrap;
+    background: color-mix(in srgb, var(--bg-surface) 94%, transparent);
+    border-top: 1px solid var(--border-subtle);
+    box-shadow: 0 -8px 24px rgba(0,0,0,0.16);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+  }
+
+  .main-nav .nav-link {
+    min-width: 0;
+    min-height: 44px;
+    padding: 0.35rem 0.12rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-bottom: 0;
+    border-radius: 9px;
+    font-size: 0.68rem;
+    line-height: 1.1;
+    white-space: nowrap;
+  }
+
+  .main-nav .nav-link.active {
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    font-weight: 600;
+  }
+
+  body {
+    padding-bottom: calc(68px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .page-container,
+  .auth-panel {
+    padding-top: 1.45rem;
+  }
+
+  .site-footer {
+    padding-bottom: calc(1.25rem + 72px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .public-shelf-toolbar {
+    justify-content: flex-start;
+    margin-top: -0.65rem;
   }
 }

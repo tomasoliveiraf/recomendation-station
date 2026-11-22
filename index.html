@@ -16,7 +16,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Plus+Jakarta+Sans:wght@400;500;600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="styles.css?v=20261121-mobilefix1" />
+  <link rel="stylesheet" href="styles.css?v=20261122-mobile-nav-sort-genres" />
 </head>
 <body>
   <header class="site-header">
@@ -483,6 +483,17 @@
         <button id="public-tab-lists" class="mode-tab" type="button">Lists <span id="public-count-lists" class="tab-count">0</span></button>
       </div>
 
+      <div class="public-shelf-toolbar">
+        <label for="public-shelf-sort-select" class="meta-label">Sort</label>
+        <select id="public-shelf-sort-select" class="sort-select">
+          <option value="recent">Recently added</option>
+          <option value="year-desc">Release date (Newest)</option>
+          <option value="year-asc">Release date (Oldest)</option>
+          <option value="popularity">Popularity</option>
+          <option value="title">Title (A–Z)</option>
+          <option value="artist">Artist (A–Z)</option>
+        </select>
+      </div>
       <div id="public-lists-grid" class="lists-grid hidden"></div>
       <div id="public-shelf-grid" class="shelf-grid"></div>
       <p id="public-shelf-empty" class="empty-state hidden">Nothing on this shelf yet.</p>
