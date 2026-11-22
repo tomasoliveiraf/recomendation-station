@@ -81,7 +81,7 @@ let currentView = "station";
 let currentRoute = { type: "station" };
 let viewHistory = [];
 let authMode = "signin";
-let dayOffset = 0;
+let devDayOffset = 0;
 
 let pendingListenerParam = new URLSearchParams(window.location.search).get("listener") || null;
 
@@ -1756,8 +1756,33 @@ async function renderHomeDiscoverySections(reqId) {
 // ------------------------------------------------------------
 function getActiveDate() {
   const d = new Date();
-  d.setDate(d.getDate() + dayOffset);
+  // Date simulation is available only in explicit developer mode (?dev=1).
+  if (new URLSearchParams(window.location.search).get("dev") === "1") {
+    d.setDate(d.getDate() + devDayOffset);
+  }
   return d;
+}
+
+
+// Private date simulation hook for development/testing only.
+// Enable by opening the app with ?dev=1; never rendered in the normal UI.
+if (new URLSearchParams(window.location.search).get("dev") === "1") {
+  window.__stationDev = Object.freeze({
+    setDayOffset(days) {
+      const value = Number(days);
+      if (!Number.isInteger(value) || Math.abs(value) > 3650) {
+        throw new Error("setDayOffset expects an integer between -3650 and 3650.");
+      }
+      devDayOffset = value;
+      if (sessionUser) showStationView();
+      return getDateSeed(getActiveDate());
+    },
+    resetDay() {
+      devDayOffset = 0;
+      if (sessionUser) showStationView();
+      return getDateSeed(getActiveDate());
+    }
+  });
 }
 
 function formatDisplayDate(d) {
@@ -5091,9 +5116,6 @@ on("back-to-listeners-btn", "click", () => {
   $("public-profile-view").classList.add("hidden");
   $("listeners-directory").classList.remove("hidden");
 });
-
-on("sim-prev-day", "click", () => { dayOffset -= 1; showStationView(); });
-on("sim-next-day", "click", () => { dayOffset += 1; showStationView(); });
 
 // ------------------------------------------------------------
 // Boot & Shared Profile Deep Link (?listener=UUID)
