@@ -1919,12 +1919,15 @@ async function generateDynamicDailyPick(profile, dateSeed, excluded) {
   return (await tryByTasteTag()) || (await tryBySimilarArtist());
 }
 
-function getFallbackCatalogRecommendation(profile, date, excludedKeys) {
+function getFallbackCatalogRecommendation(profile, date, excluded) {
   const all = CATALOG_ITEMS.filter((i) => i.mediaType === "album");
-  const fresh = all.filter((a) => !excludedKeys.has(normalizeTitleKey(a.title, a.artist)));
-  const base = fresh.length ? fresh : all;
-  const matched = base.filter((a) => a.tags.some((t) => (profile?.tastes || []).includes(t)));
-  const pool = matched.length ? matched : base;
+  const eligible = all.filter((a) => !isExcludedCandidate(a.title, a.artist, excluded));
+  if (!eligible.length) return null;
+
+  const matched = eligible.filter((a) =>
+    a.tags.some((t) => (profile?.tastes || []).includes(t))
+  );
+  const pool = matched.length ? matched : eligible;
   const pick = pool[hashString(`${profile.user_id}|${getDateSeed(date)}`) % pool.length];
   return { ...pick, reason: `Curated for ${profile.display_name}` };
 }
@@ -1967,8 +1970,13 @@ async function loadDailyPick(userId, pickDate) {
   return data || null;
 }
 
-async function loadPastDailyPicks(userId) {
-  const { data } = await sb.from("daily_picks").select("title, artist").eq("user_id", userId).order("pick_date", { ascending: false }).limit(90);
+async function loadPastDailyPicks(userId, excludeDate = null) {
+  let query = sb.from("daily_picks").select("title, artist")
+    .eq("user_id", userId)
+    .order("pick_date", { ascending: false })
+    .limit(90);
+  if (excludeDate) query = query.neq("pick_date", excludeDate);
+  const { data } = await query;
   return data || [];
 }
 
@@ -2777,6 +2785,24 @@ const VIEW_IDS = {
   "genre-detail": "genre-detail-view"
 };
 
+
+// Keep mobile navigation as a direct child of <body> so position:fixed is
+// anchored to the viewport in installed iOS PWAs (not to the header).
+function relocateMainNavForViewport() {
+  const nav = $("main-nav");
+  const header = document.querySelector(".site-header");
+  if (!nav || !header) return;
+
+  const mobile = window.matchMedia("(max-width: 760px)").matches;
+  if (mobile && nav.parentElement !== document.body) {
+    document.body.appendChild(nav);
+  } else if (!mobile && nav.parentElement !== header) {
+    const controls = header.querySelector(".header-controls");
+    header.insertBefore(nav, controls || null);
+  }
+  nav.classList.toggle("mobile-bottom-nav", mobile);
+}
+
 function setActiveNav(view, activeTabOverride = null) {
   stopPreview();
   currentView = view;
@@ -3039,25 +3065,55 @@ async function showStationView(clearHistory = true) {
 
   renderHomeDiscoverySections(reqId);
 
-  let storedPick = await loadDailyPick(sessionUser.id, dateSeed);
+  const [storedPick, pastPicks, myShelf] = await Promise.all([
+    loadDailyPick(sessionUser.id, dateSeed),
+    loadPastDailyPicks(sessionUser.id, dateSeed),
+    loadUserShelf(sessionUser.id)
+  ]);
   if (reqId !== stationReqId) return;
 
-  let resolvedAlbum = null;
+  const excluded = buildExcludedSets(userProfile, pastPicks, myShelf);
+  const storedPickIsEligible =
+    storedPick &&
+    !isStoredPickInvalid(storedPick) &&
+    !isExcludedCandidate(storedPick.title, storedPick.artist, excluded);
 
-  if (storedPick && !isStoredPickInvalid(storedPick)) {
-    resolvedAlbum = mapStoredPickToAlbum(storedPick);
-  } else {
-    const [pastPicks, myShelf] = await Promise.all([loadPastDailyPicks(sessionUser.id), loadUserShelf(sessionUser.id)]);
-    if (reqId !== stationReqId) return;
+  let resolvedAlbum = storedPickIsEligible ? mapStoredPickToAlbum(storedPick) : null;
 
-    const excluded = buildExcludedSets(userProfile, pastPicks, myShelf);
+  // A saved pick can become ineligible after the listener marks it as listened.
+  // Replace it for today rather than showing an album already on the listened shelf.
+  if (!resolvedAlbum) {
     const dynamicPick = await generateDynamicDailyPick(userProfile, dateSeed, excluded);
     if (reqId !== stationReqId) return;
 
-    resolvedAlbum = dynamicPick
-      ? mapStoredPickToAlbum(await saveDailyPick(sessionUser.id, dateSeed, dynamicPick))
-      : getFallbackCatalogRecommendation(userProfile, activeDate, excluded.keys);
+    const replacement = dynamicPick ||
+      getFallbackCatalogRecommendation(userProfile, activeDate, excluded);
+
+    if (replacement) {
+      const savedReplacement = await saveDailyPick(sessionUser.id, dateSeed, replacement);
+      resolvedAlbum = mapStoredPickToAlbum(savedReplacement);
+    }
     if (reqId !== stationReqId) return;
+  }
+
+  if (!resolvedAlbum) {
+    currentAlbum = null;
+    currentInteraction = emptyInteraction();
+    coverEl.classList.remove("loading");
+    coverEl.removeAttribute("src");
+    $("album-artist").textContent = "";
+    $("album-title").textContent = "Your next discovery is on its way.";
+    $("album-synopsis").textContent =
+      "You've already explored the albums currently available for your profile. Add more artists or genres to unlock fresh recommendations.";
+    $("album-tags").innerHTML = "";
+    $("album-year").textContent = "—";
+    $("album-runtime").textContent = "—";
+    $("album-label").textContent = "—";
+    $("listener-greeting").textContent = "No eligible album today";
+    $("reviews-list").innerHTML = "";
+    $("review-source-note").textContent = "";
+    renderStationButtons();
+    return;
   }
 
   currentAlbum = resolvedAlbum;
@@ -5053,6 +5109,10 @@ async function handlePostLoginNavigation() {
   }
   showStationView();
 }
+
+window.addEventListener("resize", relocateMainNavForViewport, { passive: true });
+window.addEventListener("orientationchange", relocateMainNavForViewport, { passive: true });
+relocateMainNavForViewport();
 
 (async function init() {
   injectCompatStyles();

@@ -2369,7 +2369,7 @@ textarea:focus {
     min-height: 58px;
   }
 
-  .site-header .site-header .main-nav:not(.hidden) {
+  .site-header .main-nav.mobile-bottom-nav:not(.hidden) {
     position: fixed;
     z-index: 1000;
     left: 0;
@@ -3326,7 +3326,7 @@ body.follow-dialog-open {
     display: none;
   }
 
-  .site-header .main-nav:not(.hidden) {
+  .main-nav.mobile-bottom-nav:not(.hidden) {
     position: fixed;
     z-index: 1000;
     left: 0;
@@ -3386,5 +3386,44 @@ body.follow-dialog-open {
   .public-shelf-toolbar {
     justify-content: flex-start;
     margin-top: -0.65rem;
+  }
+}
+
+
+/* Reliable bottom navigation for installed mobile web apps.
+   app.js relocates the nav to body so fixed positioning is viewport-relative. */
+@media (max-width: 760px) {
+  .site-header {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    min-height: calc(58px + env(safe-area-inset-top, 0px));
+    padding-top: calc(0.55rem + env(safe-area-inset-top, 0px));
+    padding-bottom: 0.55rem;
+  }
+
+  .main-nav.mobile-bottom-nav:not(.hidden) {
+    position: fixed !important;
+    inset: auto 0 0 0 !important;
+    z-index: 10000;
+    width: 100%;
+    min-height: calc(64px + env(safe-area-inset-bottom, 0px));
+    padding: 0.35rem max(0.5rem, env(safe-area-inset-left, 0px))
+      calc(0.35rem + env(safe-area-inset-bottom, 0px))
+      max(0.5rem, env(safe-area-inset-right, 0px));
+    margin: 0 !important;
+    display: grid !important;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    align-items: center;
+    gap: 0.15rem;
+    background: color-mix(in srgb, var(--bg-surface) 96%, transparent);
+    border-top: 1px solid var(--border-subtle);
+    box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.2);
+    -webkit-backdrop-filter: blur(18px);
+    backdrop-filter: blur(18px);
+  }
+
+  body {
+    padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px)) !important;
   }
 }
