@@ -3427,3 +3427,83 @@ body.follow-dialog-open {
     padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px)) !important;
   }
 }
+
+/* Mobile header rendering and compact page bottom spacing */
+@media (max-width: 760px) {
+  .site-header {
+    padding-top: calc(1.35rem + env(safe-area-inset-top, 0px)) !important;
+    padding-bottom: 0.85rem !important;
+    background: var(--bg-page) !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+    transform: none !important;
+    filter: none !important;
+  }
+  .site-header .brand,
+  .site-header .brand-name-btn,
+  .site-header .vinyl-mark {
+    filter: none !important;
+    transform: none !important;
+    opacity: 1 !important;
+  }
+  .site-footer {
+    padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px)) !important;
+    margin-bottom: 0 !important;
+  }
+  body.app-ready {
+    padding-bottom: calc(66px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+}
+
+.reaction-choice-group {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem;
+  margin: 0.4rem 0 0.6rem;
+}
+.reaction-choice {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  min-height: 76px;
+  padding: 0.65rem 0.35rem;
+  background: var(--bg-surface);
+  color: var(--ink-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  cursor: pointer;
+  font-size: 0.78rem;
+  text-align: center;
+  transition: border-color 0.16s, background 0.16s, color 0.16s;
+}
+.reaction-face { font-size: 1.65rem; line-height: 1; }
+.reaction-choice.selected {
+  border-color: var(--accent);
+  color: var(--ink-primary);
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-surface));
+}
+.listener-reaction-display {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.55rem;
+  font-size: 0.9rem;
+  color: var(--ink-secondary);
+}
+.listener-reaction-display > :first-child { font-size: 1.35rem; }
+@media (max-width: 420px) {
+  .reaction-choice { min-height: 68px; font-size: 0.7rem; }
+}
+
+/* Icon-only, non-emoji album impressions */
+.reaction-choice { min-height: 70px; padding: 0.7rem; }
+.reaction-icon { width: 40px; height: 40px; display: block; }
+.reaction-choice .reaction-icon { width: 38px; height: 38px; }
+.listener-reaction-display .reaction-icon { width: 28px; height: 28px; }
+.reaction-choice.selected .reaction-icon { transform: scale(1.08); }
+@media (max-width: 420px) {
+  .reaction-choice { min-height: 64px; }
+  .reaction-choice .reaction-icon { width: 34px; height: 34px; }
+}

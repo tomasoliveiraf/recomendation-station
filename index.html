@@ -16,7 +16,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Plus+Jakarta+Sans:wght@400;500;600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="styles.css?v=20261122-assets-daylock" />
+  <link rel="stylesheet" href="styles.css?v=20261126-impressions1" />
 </head>
 <body>
   <header class="site-header">
@@ -213,7 +213,13 @@
           <div id="reviews-list" class="reviews-list"></div>
 
           <form id="personal-note-form" class="personal-note-box">
-            <label for="personal-note-input" class="field-label">Your note</label>
+            <label class="field-label">Your impression</label>
+<div class="reaction-choice-group" role="group" aria-label="Album impression" id="station-reaction-choices">
+  <button type="button" class="reaction-choice" data-reaction="disliked" aria-label="Didn't connect" aria-pressed="false"><svg viewBox="0 0 48 48" class="reaction-icon" aria-hidden="true"><circle cx="24" cy="24" r="18" fill="none" stroke="currentColor" stroke-width="2.6"/><circle cx="17" cy="19" r="2.2" fill="currentColor"/><circle cx="31" cy="19" r="2.2" fill="currentColor"/><path d="M15 33 Q24 25 33 33" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg></button>
+  <button type="button" class="reaction-choice" data-reaction="mixed" aria-label="It was okay" aria-pressed="false"><svg viewBox="0 0 48 48" class="reaction-icon" aria-hidden="true"><circle cx="24" cy="24" r="18" fill="none" stroke="currentColor" stroke-width="2.6"/><circle cx="17" cy="19" r="2.2" fill="currentColor"/><circle cx="31" cy="19" r="2.2" fill="currentColor"/><path d="M16 31 H32" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg></button>
+  <button type="button" class="reaction-choice" data-reaction="loved" aria-label="Loved it" aria-pressed="false"><svg viewBox="0 0 48 48" class="reaction-icon" aria-hidden="true"><circle cx="24" cy="24" r="18" fill="none" stroke="currentColor" stroke-width="2.6"/><circle cx="17" cy="19" r="2.2" fill="currentColor"/><circle cx="31" cy="19" r="2.2" fill="currentColor"/><path d="M15 28 Q24 37 33 28" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg></button>
+</div>
+<label for="personal-note-input" class="field-label">Optional note</label>
             <textarea
               id="personal-note-input"
               rows="2"
@@ -614,7 +620,13 @@
           <div id="detail-notes-list" class="reviews-list"></div>
 
           <form id="detail-note-form" class="personal-note-box">
-            <label for="detail-note-input" class="field-label">Your note</label>
+            <label class="field-label">Your impression</label>
+<div class="reaction-choice-group" role="group" aria-label="Album impression" id="detail-reaction-choices">
+  <button type="button" class="reaction-choice" data-reaction="disliked" aria-label="Didn't connect" aria-pressed="false"><svg viewBox="0 0 48 48" class="reaction-icon" aria-hidden="true"><circle cx="24" cy="24" r="18" fill="none" stroke="currentColor" stroke-width="2.6"/><circle cx="17" cy="19" r="2.2" fill="currentColor"/><circle cx="31" cy="19" r="2.2" fill="currentColor"/><path d="M15 33 Q24 25 33 33" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg></button>
+  <button type="button" class="reaction-choice" data-reaction="mixed" aria-label="It was okay" aria-pressed="false"><svg viewBox="0 0 48 48" class="reaction-icon" aria-hidden="true"><circle cx="24" cy="24" r="18" fill="none" stroke="currentColor" stroke-width="2.6"/><circle cx="17" cy="19" r="2.2" fill="currentColor"/><circle cx="31" cy="19" r="2.2" fill="currentColor"/><path d="M16 31 H32" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg></button>
+  <button type="button" class="reaction-choice" data-reaction="loved" aria-label="Loved it" aria-pressed="false"><svg viewBox="0 0 48 48" class="reaction-icon" aria-hidden="true"><circle cx="24" cy="24" r="18" fill="none" stroke="currentColor" stroke-width="2.6"/><circle cx="17" cy="19" r="2.2" fill="currentColor"/><circle cx="31" cy="19" r="2.2" fill="currentColor"/><path d="M15 28 Q24 37 33 28" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg></button>
+</div>
+<label for="detail-note-input" class="field-label">Optional note</label>
             <textarea
               id="detail-note-input"
               rows="2"
@@ -756,7 +768,7 @@
   </footer>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="data.js?v=20261122-assets-daylock"></script>
-  <script src="app.js?v=20261122-assets-daylock"></script>
+  <script src="data.js?v=20261126-impressions1"></script>
+  <script src="app.js?v=20261126-impressions1"></script>
 </body>
 </html>

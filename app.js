@@ -159,7 +159,7 @@ try { coverCache = JSON.parse(localStorage.getItem(COVER_CACHE_KEY) || "{}"); } 
 try { artistPhotoCache = JSON.parse(localStorage.getItem(ARTIST_PHOTO_CACHE_KEY) || "{}"); } catch { artistPhotoCache = {}; }
 
 function emptyInteraction() {
-  return { saved: false, listened: false, is_tbr: false, positive_note: "" };
+  return { saved: false, listened: false, is_tbr: false, positive_note: "", reaction: null };
 }
 
 function syncShelfCache(savedRow, removedAlbumId = null) {
@@ -1031,6 +1031,18 @@ async function searchLastFmAlbums(term, limit = 12) {
   return out;
 }
 
+
+function primaryArtistCredit(artist) {
+  return normalizeArtistForAlbumMatch(String(artist || ""))
+    .split(/\\s+(?:and|with|feat|featuring|ft)\\s+|[,;&+]/)
+    .map((part) => part.trim())
+    .filter(Boolean)[0] || normalizeArtistForAlbumMatch(artist);
+}
+
+function soundtrackDuplicateKey(title, artist) {
+  return `${normalizeAlbumTitleForMatch(title)}::${primaryArtistCredit(artist)}`;
+}
+
 async function searchNonSingleAlbums(term, limit = 12) {
   const linkInfo = extractAppleMusicLink(term);
   if (linkInfo) {
@@ -1049,7 +1061,7 @@ async function searchNonSingleAlbums(term, limit = 12) {
 
   for (const item of rawItunes) {
     if (!isNonSingleRelease(item)) continue;
-    const key = normalizeTitleKey(item.collectionName, item.artistName);
+    const key = soundtrackDuplicateKey(item.collectionName, item.artistName);
     if (seen.has(key)) continue;
     seen.add(key);
     merged.push(toAlbumPayloadFromItunes(item));
@@ -1058,7 +1070,7 @@ async function searchNonSingleAlbums(term, limit = 12) {
   if (merged.length < Math.min(4, limit)) {
     const lfmMatches = await searchLastFmAlbums(term, limit);
     for (const item of lfmMatches) {
-      const key = normalizeTitleKey(item.title, item.artist);
+      const key = soundtrackDuplicateKey(item.title, item.artist);
       if (seen.has(key)) continue;
       seen.add(key);
       merged.push(item);
@@ -1486,7 +1498,7 @@ async function fetchPopularUpcomingAlbums(limit = 10) {
   const seen = new Set();
   const candidates = [];
   for (const item of [...wikiGroups.flat(), ...mbItems]) {
-    const key = normalizeTitleKey(item.title, item.artist);
+    const key = soundtrackDuplicateKey(item.title, item.artist);
     if (seen.has(key)) continue;
     seen.add(key);
     candidates.push(item);
@@ -1554,7 +1566,7 @@ async function fetchHomeChartsData() {
   const seenAll = new Set();
   const combined = [];
   for (const item of [...ptList, ...usList]) {
-    const key = normalizeTitleKey(item.title, item.artist);
+    const key = soundtrackDuplicateKey(item.title, item.artist);
     if (seenAll.has(key)) continue;
     seenAll.add(key);
     combined.push(item);
@@ -2041,8 +2053,8 @@ async function loadInteraction(userId, albumId) {
 }
 
 async function loadCommunityNotes(albumId) {
-  const { data } = await sb.from("user_album_interactions").select("user_id, positive_note").eq("album_id", albumId).not("positive_note", "is", null);
-  const nonEmpty = (data || []).filter((r) => r.positive_note?.trim());
+  const { data } = await sb.from("user_album_interactions").select("user_id, positive_note, reaction").eq("album_id", albumId);
+  const nonEmpty = (data || []).filter((r) => r.positive_note?.trim() || r.reaction);
   if (!nonEmpty.length) return [];
 
   const { data: profiles } = await sb.from("user_profiles").select("user_id, display_name").in("user_id", [...new Set(nonEmpty.map((r) => r.user_id))]);
@@ -2051,7 +2063,8 @@ async function loadCommunityNotes(albumId) {
   return nonEmpty.map((r) => ({
     author: names[r.user_id] || "Listener",
     source: r.user_id === sessionUser?.id ? "Your Note" : "Station Listener",
-    text: r.positive_note.trim()
+    text: r.positive_note?.trim() || "",
+    reaction: r.reaction || null
   }));
 }
 
@@ -2088,6 +2101,7 @@ async function upsertAlbumOnShelf(albumData) {
     saved: Boolean(albumData.saved) || autoTbr,
     listened: Boolean(albumData.listened),
     positive_note: albumData.positive_note ?? relatedRows.find((row) => row.positive_note?.trim())?.positive_note ?? equivalent?.positive_note ?? null,
+    reaction: albumData.reaction ?? relatedRows.find((row) => row.reaction)?.reaction ?? equivalent?.reaction ?? null,
     updated_at: new Date().toISOString()
   };
 
@@ -2288,6 +2302,24 @@ async function searchListeners(query = "") {
 // ------------------------------------------------------------
 // Shared UI Builders (Notes, Album Cards, Artist Pills, List Cards)
 // ------------------------------------------------------------
+function reactionSymbol(value) {
+  return ({
+    disliked: `<svg viewBox="0 0 48 48" class="reaction-icon" aria-hidden="true"><circle cx="24" cy="24" r="18" fill="none" stroke="currentColor" stroke-width="2.6"/><circle cx="17" cy="19" r="2.2" fill="currentColor"/><circle cx="31" cy="19" r="2.2" fill="currentColor"/><path d="M15 33 Q24 25 33 33" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>`,
+    mixed: `<svg viewBox="0 0 48 48" class="reaction-icon" aria-hidden="true"><circle cx="24" cy="24" r="18" fill="none" stroke="currentColor" stroke-width="2.6"/><circle cx="17" cy="19" r="2.2" fill="currentColor"/><circle cx="31" cy="19" r="2.2" fill="currentColor"/><path d="M16 31 H32" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>`,
+    loved: `<svg viewBox="0 0 48 48" class="reaction-icon" aria-hidden="true"><circle cx="24" cy="24" r="18" fill="none" stroke="currentColor" stroke-width="2.6"/><circle cx="17" cy="19" r="2.2" fill="currentColor"/><circle cx="31" cy="19" r="2.2" fill="currentColor"/><path d="M15 28 Q24 37 33 28" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>`
+  })[value] || "";
+}
+
+function syncReactionChoices(containerId, value) {
+  const container = $(containerId);
+  if (!container) return;
+  container.querySelectorAll("[data-reaction]").forEach((btn) => {
+    const selected = btn.dataset.reaction === (value || "");
+    btn.classList.toggle("selected", selected);
+    btn.setAttribute("aria-pressed", selected ? "true" : "false");
+  });
+}
+
 function renderNotes(listEl, countEl, curated = [], community = []) {
   const combined = [...(curated || []), ...(community || [])];
   listEl.innerHTML = "";
@@ -2301,8 +2333,10 @@ function renderNotes(listEl, countEl, curated = [], community = []) {
   combined.forEach((rev) => {
     const card = document.createElement("blockquote");
     card.className = "review-card";
+    const moodLabel = ({ loved: "Loved it", mixed: "It was okay", disliked: "Didn't connect" })[rev.reaction] || "";
     card.innerHTML = `
-      <p class="review-quote">“${escapeHtml(rev.text)}”</p>
+      ${moodLabel ? `<div class="listener-reaction-display" aria-label="${escapeHtml(moodLabel)}">${reactionSymbol(rev.reaction)}</div>` : ""}
+      ${rev.text ? `<p class="review-quote">“${escapeHtml(rev.text)}”</p>` : ""}
       <footer class="review-author">— ${escapeHtml(rev.author)} (${escapeHtml(rev.source)})</footer>
     `;
     listEl.appendChild(card);
@@ -3019,6 +3053,7 @@ function renderStationButtons() {
   $("want-btn").classList.toggle("selected", Boolean(currentInteraction.saved && !currentInteraction.listened));
   $("listened-btn").classList.toggle("selected", Boolean(currentInteraction.listened));
   $("personal-note-input").value = currentInteraction.positive_note || "";
+  syncReactionChoices("station-reaction-choices", currentInteraction.reaction);
 }
 
 async function saveStationInteraction(patch) {
@@ -3036,7 +3071,8 @@ async function saveStationInteraction(patch) {
       saved: currentInteraction.saved,
       listened: currentInteraction.listened,
       is_tbr: false,
-      positive_note: currentInteraction.positive_note || null
+      positive_note: currentInteraction.positive_note || null,
+      reaction: currentInteraction.reaction || null
     });
     renderStationButtons();
   } catch {
@@ -3225,6 +3261,7 @@ function renderDetailButtons() {
   $("detail-tbr-btn").classList.toggle("selected", tbr);
   $("detail-listened-btn").classList.toggle("selected", Boolean(activeDetailInteraction.listened));
   $("detail-note-input").value = activeDetailInteraction.positive_note || "";
+  syncReactionChoices("detail-reaction-choices", activeDetailInteraction.reaction);
 
   const inTopFive = (userProfile?.top_five_albums || []).some((a) => a.album_id === activeDetailAlbum?.album_id);
   $("detail-topfive-btn").classList.toggle("selected", inTopFive);
@@ -3245,7 +3282,8 @@ async function saveDetailInteraction(patch) {
       saved: activeDetailInteraction.saved,
       listened: activeDetailInteraction.listened,
       is_tbr: activeDetailInteraction.is_tbr,
-      positive_note: activeDetailInteraction.positive_note || null
+      positive_note: activeDetailInteraction.positive_note || null,
+      reaction: activeDetailInteraction.reaction || null
     });
     renderDetailButtons();
   } catch {
@@ -4732,6 +4770,28 @@ on("personal-note-form", "submit", async (e) => {
   renderNotes($("reviews-list"), $("review-source-note"), currentAlbum.reviews, await loadCommunityNotes(currentAlbum.id));
 });
 
+
+function bindReactionChoices(containerId, inputId, saveFn) {
+  const container = $(containerId);
+  if (!container) return;
+  container.querySelectorAll("[data-reaction]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const value = btn.dataset.reaction;
+      const current = container.querySelector('[aria-pressed="true"]')?.dataset.reaction || null;
+      const next = current === value ? null : value;
+      syncReactionChoices(containerId, next);
+      saveFn(next);
+    });
+  });
+}
+
+bindReactionChoices("station-reaction-choices", "personal-note-input", (reaction) => {
+  currentInteraction.reaction = reaction;
+});
+bindReactionChoices("detail-reaction-choices", "detail-note-input", (reaction) => {
+  activeDetailInteraction.reaction = reaction;
+});
+
 // Album & Artist Detail triggers
 on("album-detail-back", "click", goBack);
 on("artist-detail-back", "click", goBack);
@@ -4804,7 +4864,11 @@ on("detail-note-form", "submit", async (e) => {
   e.preventDefault();
   $("detail-note-status").textContent = "Saving...";
   const hasShelf = activeDetailInteraction.saved || activeDetailInteraction.listened || activeDetailInteraction.is_tbr;
-  await saveDetailInteraction({ positive_note: $("detail-note-input").value.trim(), listened: hasShelf ? activeDetailInteraction.listened : true });
+  await saveDetailInteraction({
+    positive_note: $("detail-note-input").value.trim(),
+    reaction: activeDetailInteraction.reaction || null,
+    listened: hasShelf ? activeDetailInteraction.listened : true
+  });
   $("detail-note-status").textContent = "Saved";
   renderNotes($("detail-notes-list"), $("detail-notes-count"), activeDetailAlbum.reviews, await loadCommunityNotes(activeDetailAlbum.album_id));
 });
