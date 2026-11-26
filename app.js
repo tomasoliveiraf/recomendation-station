@@ -2304,9 +2304,9 @@ async function searchListeners(query = "") {
 // ------------------------------------------------------------
 function reactionSymbol(value) {
   return ({
-    disliked: `<svg viewBox="0 0 48 48" class="reaction-icon" aria-hidden="true"><circle cx="24" cy="24" r="18" fill="none" stroke="currentColor" stroke-width="2.6"/><circle cx="17" cy="19" r="2.2" fill="currentColor"/><circle cx="31" cy="19" r="2.2" fill="currentColor"/><path d="M15 33 Q24 25 33 33" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>`,
-    mixed: `<svg viewBox="0 0 48 48" class="reaction-icon" aria-hidden="true"><circle cx="24" cy="24" r="18" fill="none" stroke="currentColor" stroke-width="2.6"/><circle cx="17" cy="19" r="2.2" fill="currentColor"/><circle cx="31" cy="19" r="2.2" fill="currentColor"/><path d="M16 31 H32" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>`,
-    loved: `<svg viewBox="0 0 48 48" class="reaction-icon" aria-hidden="true"><circle cx="24" cy="24" r="18" fill="none" stroke="currentColor" stroke-width="2.6"/><circle cx="17" cy="19" r="2.2" fill="currentColor"/><circle cx="31" cy="19" r="2.2" fill="currentColor"/><path d="M15 28 Q24 37 33 28" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>`
+    disliked: `<svg viewBox="0 0 48 48" class="reaction-icon" aria-hidden="true"><path d="M24 41 C18 36 6 26 6 17.5 C6 9 16 5 23 13 C30 5 42 9 42 17.5 C42 26 30 36 24 41Z" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M24 12 L19 22 L26 25 L20 32 L28 37" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+    mixed: `<svg viewBox="0 0 48 48" class="reaction-icon" aria-hidden="true"><circle cx="24" cy="24" r="19" fill="none" stroke="currentColor" stroke-width="2.8"/><path d="M12.5 17.5 Q18 13 23 16 M26 15.5 Q32 18 36 16.5" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round"/><circle cx="17" cy="24" r="1.8" fill="currentColor"/><circle cx="31" cy="24" r="1.8" fill="currentColor"/><path d="M17.5 32 H30.5" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round"/></svg>`,
+    loved: `<svg viewBox="0 0 48 48" class="reaction-icon" aria-hidden="true"><path d="M24 43 C17 38 8 30 9 20 C10 14 14 10 17 6 Q16 17 22 16 Q22 9 29 4 Q28 18 36 24 Q43 33 35 39 Q30 43 24 43Z" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M24 37 Q18 31 23 25 Q24 31 28 29 Q29 23 32 20 Q34 29 31 34 Q28 37 24 37Z" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`
   })[value] || "";
 }
 
@@ -2335,9 +2335,8 @@ function renderNotes(listEl, countEl, curated = [], community = []) {
     card.className = "review-card";
     const moodLabel = ({ loved: "Loved it", mixed: "It was okay", disliked: "Didn't connect" })[rev.reaction] || "";
     card.innerHTML = `
-      ${moodLabel ? `<div class="listener-reaction-display" aria-label="${escapeHtml(moodLabel)}">${reactionSymbol(rev.reaction)}</div>` : ""}
       ${rev.text ? `<p class="review-quote">“${escapeHtml(rev.text)}”</p>` : ""}
-      <footer class="review-author">— ${escapeHtml(rev.author)} (${escapeHtml(rev.source)})</footer>
+      <footer class="review-author">— ${escapeHtml(rev.author)} (${escapeHtml(rev.source)}) ${moodLabel ? `<span class="review-reaction-inline" title="${escapeHtml(moodLabel)}" aria-label="${escapeHtml(moodLabel)}">${reactionSymbol(rev.reaction)}</span>` : ""}</footer>
     `;
     listEl.appendChild(card);
   });
@@ -2442,6 +2441,10 @@ function createAlbumCard(
        </div>`
     : "";
 
+  const reactionBadgeHtml = (mode === "public" || mode === "shelf") && item.reaction
+    ? `<span class="profile-album-reaction" title="${escapeHtml(({ loved: "Loved it", mixed: "It was okay", disliked: "Didn't connect" })[item.reaction] || "Reaction")}" aria-label="${escapeHtml(({ loved: "Loved it", mixed: "It was okay", disliked: "Didn't connect" })[item.reaction] || "Reaction")}">${reactionSymbol(item.reaction)}</span>`
+    : "";
+
   const card = document.createElement("article");
   card.className = "shelf-card";
   card.innerHTML = `
@@ -2449,6 +2452,7 @@ function createAlbumCard(
       <button class="shelf-cover js-open-album" type="button" aria-label="Open ${escapeHtml(payload.title)}">
         ${payload.cover_url ? `<img src="${escapeHtml(payload.cover_url)}" alt="${escapeHtml(payload.title)}" loading="lazy" />` : VINYL_PLACEHOLDER_SVG}
       </button>
+      ${reactionBadgeHtml}
       ${coverOverlayHtml}
     </div>
     <div class="shelf-card-meta">
@@ -4771,6 +4775,19 @@ on("personal-note-form", "submit", async (e) => {
 });
 
 
+async function persistReactionWithoutReordering(album, reaction) {
+  if (!sessionUser || !album?.album_id) return;
+  // Update only the reaction column: do not touch updated_at, which controls shelf recency.
+  const { error } = await sb.from("user_album_interactions")
+    .update({ reaction: reaction || null })
+    .eq("user_id", sessionUser.id).eq("album_id", album.album_id);
+  if (error) throw error;
+  shelfItems = shelfItems.map((row) => row.album_id === album.album_id ? { ...row, reaction: reaction || null } : row);
+  if (currentRoute?.type === "public-profile" && currentRoute.profile?.user_id === sessionUser.id) {
+    publicShelfItems = publicShelfItems.map((row) => row.album_id === album.album_id ? { ...row, reaction: reaction || null } : row);
+  }
+}
+
 function bindReactionChoices(containerId, inputId, saveFn) {
   const container = $(containerId);
   if (!container) return;
@@ -4785,11 +4802,15 @@ function bindReactionChoices(containerId, inputId, saveFn) {
   });
 }
 
-bindReactionChoices("station-reaction-choices", "personal-note-input", (reaction) => {
+bindReactionChoices("station-reaction-choices", "personal-note-input", async (reaction) => {
   currentInteraction.reaction = reaction;
+  try { await persistReactionWithoutReordering({ album_id: currentAlbum?.id }, reaction); }
+  catch (error) { console.error("Reaction save failed", error); $("note-status").textContent = "Could not save reaction"; }
 });
-bindReactionChoices("detail-reaction-choices", "detail-note-input", (reaction) => {
+bindReactionChoices("detail-reaction-choices", "detail-note-input", async (reaction) => {
   activeDetailInteraction.reaction = reaction;
+  try { await persistReactionWithoutReordering(activeDetailAlbum, reaction); }
+  catch (error) { console.error("Reaction save failed", error); $("detail-note-status").textContent = "Could not save reaction"; }
 });
 
 // Album & Artist Detail triggers
